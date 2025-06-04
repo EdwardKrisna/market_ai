@@ -181,7 +181,7 @@ class DataChatbot:
     
     def __init__(self, api_key: str):
         self.llm = ChatOpenAI(
-            model="gpt-4o-mini",
+            model="gpt-4.1-mini",
             api_key=api_key,
             temperature=0.3,
             max_tokens=1000,
@@ -1235,7 +1235,7 @@ def render_data_chatbot():
         st.sidebar.markdown("---")
         st.sidebar.markdown("**💬 Chat Status**")
         st.sidebar.success(f"✅ {len(st.session_state.chatbot_messages)} messages")
-        st.sidebar.info(f"🤖 AI Model: gpt-4o-mini")
+        st.sidebar.info(f"🤖 AI Model: gpt-4.1-mini")
         st.sidebar.info(f"📊 Dataset: {df.shape[0]:,} rows")
 
 def main():
