@@ -491,14 +491,6 @@ def render_data_selection():
             with col1:
                 available_columns = st.session_state.table_columns['column_name'].tolist()
                 
-                # Initialize session state for selected columns
-                if 'selected_columns' not in st.session_state:
-                    if st.session_state.selected_table == 'engineered_property_data':
-                        land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
-                        st.session_state.selected_columns = [col for col in land_columns if col in available_columns]
-                    else:
-                        st.session_state.selected_columns = available_columns[:10] if len(available_columns) > 10 else available_columns
-                
                 # Special handling for Land Market (engineered_property_data)
                 if st.session_state.selected_table == 'engineered_property_data':
                     # For Land Market, only show specific columns
@@ -508,22 +500,17 @@ def render_data_selection():
                     selected_columns = st.multiselect(
                         "Columns for Land Market analysis:",
                         available_columns,
-                        value=st.session_state.selected_columns,
-                        help="These are the pre-selected columns for Land Market analysis.",
-                        key="column_selector"
+                        default=available_columns,
+                        help="These are the pre-selected columns for Land Market analysis."
                     )
                 else:
                     # For other tables, show all columns with flexible selection
                     selected_columns = st.multiselect(
                         "Select columns to include in your analysis:",
                         available_columns,
-                        value=st.session_state.selected_columns,
-                        help="Choose which columns you want to analyze. You can select all or specific columns.",
-                        key="column_selector"
+                        default=available_columns[:10] if len(available_columns) > 10 else available_columns,
+                        help="Choose which columns you want to analyze. You can select all or specific columns."
                     )
-                
-                # Update session state when multiselect changes
-                st.session_state.selected_columns = selected_columns
             
             with col2:
                 st.write("")
@@ -531,13 +518,13 @@ def render_data_selection():
                 if st.button("Select All Columns", use_container_width=True):
                     if st.session_state.selected_table == 'engineered_property_data':
                         land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
-                        st.session_state.selected_columns = [col for col in land_columns if col in available_columns]
+                        selected_columns = [col for col in land_columns if col in available_columns]
                     else:
-                        st.session_state.selected_columns = available_columns
+                        selected_columns = available_columns
                     st.rerun()
                 
                 if st.button("Clear Selection", use_container_width=True):
-                    st.session_state.selected_columns = []
+                    selected_columns = []
                     st.rerun()
             
             # Data filtering section
