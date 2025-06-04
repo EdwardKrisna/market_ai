@@ -14,4 +14,4 @@ beautifulsoup4
 langchain
 langchain-community
 langchain-openai
-
+psycopg2-binary
