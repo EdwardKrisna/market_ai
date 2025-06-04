@@ -181,130 +181,12 @@ class DataChatbot:
     
     def __init__(self, api_key: str):
         self.llm = ChatOpenAI(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",
             api_key=api_key,
             temperature=0.3,
             max_tokens=1000,
             streaming=True
         )
-    
-    def create_plot(self, df: pd.DataFrame, plot_config: dict) -> go.Figure:
-        """Create plotly figure based on configuration"""
-        try:
-            plot_type = plot_config.get('type', 'scatter')
-            x_col = plot_config.get('x')
-            y_col = plot_config.get('y')
-            color_col = plot_config.get('color')
-            title = plot_config.get('title', 'Data Visualization')
-            filters = plot_config.get('filters', {})
-            
-            # Apply filters to dataframe first
-            filtered_df = df.copy()
-            
-            for col, filter_config in filters.items():
-                if col in filtered_df.columns:
-                    if isinstance(filter_config, dict):
-                        if 'min' in filter_config and 'max' in filter_config:
-                            # Numeric range filter
-                            filtered_df = filtered_df[
-                                (filtered_df[col] >= filter_config['min']) & 
-                                (filtered_df[col] <= filter_config['max'])
-                            ]
-                        elif 'values' in filter_config:
-                            # Category filter
-                            filtered_df = filtered_df[filtered_df[col].isin(filter_config['values'])]
-                        elif 'contains' in filter_config:
-                            # Text filter
-                            filtered_df = filtered_df[filtered_df[col].str.contains(filter_config['contains'], case=False, na=False)]
-                    elif isinstance(filter_config, list):
-                        # Direct list of values
-                        filtered_df = filtered_df[filtered_df[col].isin(filter_config)]
-            
-            # Validate columns exist in filtered dataframe
-            if x_col and x_col not in filtered_df.columns:
-                return None
-            if y_col and y_col not in filtered_df.columns:
-                return None
-            if color_col and color_col not in filtered_df.columns:
-                color_col = None
-            
-            # Check if we have data after filtering
-            if len(filtered_df) == 0:
-                st.warning("Tidak ada data yang sesuai dengan filter yang diminta.")
-                return None
-            
-            # Create plot based on type
-            if plot_type == 'scatter':
-                fig = px.scatter(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
-            
-            elif plot_type == 'bar':
-                if y_col:
-                    if color_col:
-                        fig = px.bar(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
-                    else:
-                        # Group by x_col and aggregate y_col
-                        grouped_df = filtered_df.groupby(x_col)[y_col].sum().reset_index()
-                        fig = px.bar(grouped_df, x=x_col, y=y_col, title=title)
-                else:
-                    # Count occurrences
-                    count_df = filtered_df[x_col].value_counts().reset_index()
-                    count_df.columns = [x_col, 'count']
-                    fig = px.bar(count_df, x=x_col, y='count', title=title)
-            
-            elif plot_type == 'line':
-                fig = px.line(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
-            
-            elif plot_type == 'histogram':
-                fig = px.histogram(filtered_df, x=x_col, color=color_col, title=title)
-            
-            elif plot_type == 'box':
-                fig = px.box(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
-            
-            else:
-                return None
-            
-            # Update layout for better appearance
-            fig.update_layout(
-                height=400,
-                showlegend=True,
-                margin=dict(l=50, r=50, t=50, b=50)
-            )
-            
-            # Add info about filtering
-            if filters:
-                filter_info = f"Data difilter: {len(filtered_df):,} dari {len(df):,} records"
-                fig.add_annotation(
-                    text=filter_info,
-                    xref="paper", yref="paper",
-                    x=1, y=1, xanchor='right', yanchor='top',
-                    showarrow=False,
-                    font=dict(size=10, color="gray")
-                )
-            
-            return fig
-            
-        except Exception as e:
-            st.error(f"Error creating plot: {str(e)}")
-            return None
-    
-    def extract_plot_config(self, ai_response: str) -> dict:
-        """Extract plot configuration from AI response"""
-        try:
-            # Look for plot configuration in AI response
-            if "PLOT_CONFIG:" in ai_response:
-                # Extract JSON configuration
-                start_idx = ai_response.find("PLOT_CONFIG:") + len("PLOT_CONFIG:")
-                end_idx = ai_response.find("END_PLOT", start_idx)
-                if end_idx == -1:
-                    end_idx = len(ai_response)
-                
-                config_str = ai_response[start_idx:end_idx].strip()
-                plot_config = json.loads(config_str)
-                return plot_config
-        except:
-            pass
-        
-        return None
     
     def generate_data_summary(self, df: pd.DataFrame) -> str:
         """Generate comprehensive data summary including more details"""
@@ -391,51 +273,6 @@ class DataChatbot:
         - Perform calculations across all {len(df):,} records
         - Base all insights on the complete dataset analysis
         - You can only answer with Bahasa Indonesia
-        
-        PLOTTING CAPABILITIES:
-        When users ask for visualizations or plots, you can create them using this format:
-        
-        PLOT_CONFIG:
-        {{
-            "type": "scatter|bar|line|histogram|box",
-            "x": "column_name_for_x_axis",
-            "y": "column_name_for_y_axis", 
-            "color": "column_name_for_color_grouping",
-            "title": "Plot Title in Indonesian",
-            "filters": {{
-                "column_name": {{"min": value, "max": value}},
-                "another_column": {{"values": ["val1", "val2"]}},
-                "text_column": {{"contains": "search_term"}}
-            }}
-        }}
-        END_PLOT
-        
-        Available plot types:
-        - scatter: Scatter plot for numeric vs numeric
-        - bar: Bar chart for categorical vs numeric (if no y specified, will count occurrences)
-        - line: Line chart for trends over time/sequence
-        - histogram: Distribution of single numeric variable
-        - box: Box plot for comparing distributions
-        
-        Filter types:
-        - Numeric range: {{"min": 2020, "max": 2025}} 
-        - Category values: {{"values": ["Jakarta", "Bandung"]}}
-        - Text search: {{"contains": "villa"}}
-        - Direct list: ["2020", "2021", "2022"]
-        
-        IMPORTANT INSTRUCTIONS FOR PLOTTING:
-        - DO NOT mention PLOT_CONFIG in your response text
-        - DO NOT show the JSON configuration to users
-        - Simply explain what chart you're creating and why
-        - Let the system handle the technical plot generation
-        - Keep your response focused on data insights, not technical details
-        - When filtering is requested (like "tahun 2020-2025"), always include appropriate filters
-        
-        Example response for "buat barchart jumlah unit dari tahun 2020-2025":
-        "Saya akan membuat bar chart untuk menampilkan jumlah unit properti dari tahun 2020 hingga 2025. Chart ini akan membantu melihat tren jumlah unit per tahun dalam periode tersebut."
-        
-        Only suggest plots when users explicitly ask for visualization, charts, or graphs.
-        Always use Indonesian column names if available, and create titles in Indonesian.
         
         Remember: You have access to every single record in this dataset for comprehensive analysis.
         """
@@ -649,45 +486,46 @@ def render_data_selection():
             st.markdown("---")
             
             # Column selection
-            st.markdown("### 📊 **Column Selection**")
+            col1, col2 = st.columns([2, 1])
             
-            available_columns = st.session_state.table_columns['column_name'].tolist()
+            with col1:
+                available_columns = st.session_state.table_columns['column_name'].tolist()
+                
+                # Special handling for Land Market (engineered_property_data)
+                if st.session_state.selected_table == 'engineered_property_data':
+                    # For Land Market, only show specific columns
+                    land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'longitude', 'latitude']
+                    available_columns = [col for col in land_columns if col in available_columns]
+                    
+                    selected_columns = st.multiselect(
+                        "Columns for Land Market analysis:",
+                        available_columns,
+                        default=available_columns,
+                        help="These are the pre-selected columns for Land Market analysis."
+                    )
+                else:
+                    # For other tables, show all columns with flexible selection
+                    selected_columns = st.multiselect(
+                        "Select columns to include in your analysis:",
+                        available_columns,
+                        default=available_columns[:10] if len(available_columns) > 10 else available_columns,
+                        help="Choose which columns you want to analyze. You can select all or specific columns."
+                    )
             
-            # Special handling for Land Market (engineered_property_data)
-            if st.session_state.selected_table == 'engineered_property_data':
-                # For Land Market, only show specific columns
-                land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
-                available_columns = [col for col in land_columns if col in available_columns]
-                
-                selected_columns = st.multiselect(
-                    "Select columns for Land Market analysis (remove unwanted ones):",
-                    available_columns,
-                    default=available_columns,  # All Land Market columns selected by default
-                    help="All required Land Market columns are selected. Remove any you don't need for analysis."
-                )
-                
-                # Show column count
-                st.info(f"📊 {len(selected_columns)} of {len(available_columns)} Land Market columns selected")
-                
-            else:
-                # For other tables, show all columns with all selected by default
-                selected_columns = st.multiselect(
-                    "Select columns for analysis (remove unwanted ones):",
-                    available_columns,
-                    default=available_columns,  # All columns selected by default
-                    help="All columns are selected by default. Remove the ones you don't need for your analysis."
-                )
-                
-                # Show column count and quick info
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"📊 {len(selected_columns)} of {len(available_columns)} columns selected")
-                with col2:
-                    if len(selected_columns) != len(available_columns):
-                        removed_count = len(available_columns) - len(selected_columns)
-                        st.info(f"🗑️ {removed_count} columns removed")
+            with col2:
+                st.write("")
+                st.write("")
+                if st.button("Select All Columns", use_container_width=True):
+                    if st.session_state.selected_table == 'engineered_property_data':
+                        land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
+                        st.session_state.selected_columns = [col for col in land_columns if col in available_columns]
                     else:
-                        st.info("✅ All columns included")
+                        st.session_state.selected_columns = available_columns
+                    st.rerun()
+                
+                if st.button("Clear Selection", use_container_width=True):
+                    st.session_state.selected_columns = []
+                    st.rerun()
             
             # Data filtering section
             if selected_columns:
@@ -1256,40 +1094,11 @@ def render_data_chatbot():
                     full_response = response.content
                     response_container.markdown(full_response)
                 
-                # Check if AI wants to create a plot
-                plot_config = chatbot.extract_plot_config(full_response)
-                if plot_config:
-                    # Remove plot configuration from displayed response
-                    clean_response = full_response
-                    if "PLOT_CONFIG:" in clean_response:
-                        start_idx = clean_response.find("PLOT_CONFIG:")
-                        end_idx = clean_response.find("END_PLOT") + len("END_PLOT")
-                        if end_idx > len("END_PLOT") - 1:  # END_PLOT was found
-                            clean_response = clean_response[:start_idx] + clean_response[end_idx:]
-                        clean_response = clean_response.strip()
-                    
-                    # Update displayed response without technical details
-                    response_container.markdown(clean_response)
-                    
-                    # Create and display the plot
-                    st.markdown("**📊 Grafik yang dibuat untuk Anda:**")
-                    fig = chatbot.create_plot(df, plot_config)
-                    if fig:
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.error("Maaf, tidak dapat membuat grafik dengan konfigurasi tersebut.")
-                    
-                    # Store clean response in history
-                    st.session_state.chatbot_messages.append({
-                        "role": "assistant", 
-                        "content": clean_response
-                    })
-                else:
-                    # No plot requested, store full response
-                    st.session_state.chatbot_messages.append({
-                        "role": "assistant", 
-                        "content": full_response
-                    })
+                # Add assistant response to history
+                st.session_state.chatbot_messages.append({
+                    "role": "assistant", 
+                    "content": full_response
+                })
                 
             except Exception as e:
                 st.error(f"Error generating response: {str(e)}")
@@ -1371,9 +1180,9 @@ def render_data_chatbot():
                 st.error(f"Error generating response: {str(e)}")
     
     with col4:
-        if st.button("📊 Create Chart", use_container_width=True):
-            chart_prompt = "Buatkan saya grafik/chart yang menarik untuk memvisualisasikan data ini. Pilih jenis chart yang paling sesuai dengan data."
-            st.session_state.chatbot_messages.append({"role": "user", "content": chart_prompt})
+        if st.button("🔍 Data Quality", use_container_width=True):
+            quality_prompt = "Assess the data quality of this dataset. What are the missing values, outliers, and data quality issues?"
+            st.session_state.chatbot_messages.append({"role": "user", "content": quality_prompt})
             try:
                 messages = [SystemMessage(content=st.session_state.chatbot_system_prompt)]
                 for msg in st.session_state.chatbot_messages:
@@ -1383,40 +1192,10 @@ def render_data_chatbot():
                         messages.append(AIMessage(content=msg["content"]))
                 
                 response = chatbot.llm.invoke(messages)
-                full_response = response.content
-                
-                # Check for plot configuration
-                plot_config = chatbot.extract_plot_config(full_response)
-                if plot_config:
-                    # Clean response from technical details
-                    clean_response = full_response
-                    if "PLOT_CONFIG:" in clean_response:
-                        start_idx = clean_response.find("PLOT_CONFIG:")
-                        end_idx = clean_response.find("END_PLOT") + len("END_PLOT")
-                        if end_idx > len("END_PLOT") - 1:
-                            clean_response = clean_response[:start_idx] + clean_response[end_idx:]
-                        clean_response = clean_response.strip()
-                    
-                    with st.chat_message("assistant"):
-                        st.markdown(clean_response)
-                        st.markdown("**📊 Grafik yang dibuat untuk Anda:**")
-                        fig = chatbot.create_plot(df, plot_config)
-                        if fig:
-                            st.plotly_chart(fig, use_container_width=True)
-                        else:
-                            st.error("Maaf, tidak dapat membuat grafik dengan konfigurasi tersebut.")
-                    
-                    # Store clean response
-                    st.session_state.chatbot_messages.append({
-                        "role": "assistant", 
-                        "content": clean_response
-                    })
-                else:
-                    # Store full response if no plot
-                    st.session_state.chatbot_messages.append({
-                        "role": "assistant", 
-                        "content": full_response
-                    })
+                st.session_state.chatbot_messages.append({
+                    "role": "assistant", 
+                    "content": response.content
+                })
                 st.rerun()
                 
             except Exception as e:
@@ -1457,7 +1236,7 @@ def render_data_chatbot():
         st.sidebar.markdown("---")
         st.sidebar.markdown("**💬 Chat Status**")
         st.sidebar.success(f"✅ {len(st.session_state.chatbot_messages)} messages")
-        st.sidebar.info(f"🤖 AI Model: gpt-4.1-mini")
+        st.sidebar.info(f"🤖 AI Model: gpt-4o-mini")
         st.sidebar.info(f"📊 Dataset: {df.shape[0]:,} rows")
 
 def main():
