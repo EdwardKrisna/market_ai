@@ -491,6 +491,25 @@ def render_data_selection():
             with col1:
                 available_columns = st.session_state.table_columns['column_name'].tolist()
                 
+                # Initialize session state for selected columns
+                if 'selected_columns' not in st.session_state or st.session_state.get('last_selected_table') != st.session_state.selected_table:
+                    # Reset when table changes or first time
+                    if st.session_state.selected_table == 'engineered_property_data':
+                        # For Land Market, only show specific columns
+                        land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
+                        default_columns = [col for col in land_columns if col in available_columns]
+                    else:
+                        # For other tables, default to first 10 or all if less than 10
+                        default_columns = available_columns[:10] if len(available_columns) > 10 else available_columns
+                    
+                    st.session_state.selected_columns = default_columns
+                    st.session_state.last_selected_table = st.session_state.selected_table
+                
+                # Ensure session state values are valid (prevent TypeError)
+                valid_selected = [col for col in st.session_state.selected_columns if col in available_columns]
+                if len(valid_selected) != len(st.session_state.selected_columns):
+                    st.session_state.selected_columns = valid_selected
+                
                 # Special handling for Land Market (engineered_property_data)
                 if st.session_state.selected_table == 'engineered_property_data':
                     # For Land Market, only show specific columns
@@ -500,17 +519,22 @@ def render_data_selection():
                     selected_columns = st.multiselect(
                         "Columns for Land Market analysis:",
                         available_columns,
-                        default=available_columns,
-                        help="These are the pre-selected columns for Land Market analysis."
+                        value=st.session_state.selected_columns,
+                        help="These are the pre-selected columns for Land Market analysis.",
+                        key="column_selector"
                     )
                 else:
                     # For other tables, show all columns with flexible selection
                     selected_columns = st.multiselect(
                         "Select columns to include in your analysis:",
                         available_columns,
-                        default=available_columns[:10] if len(available_columns) > 10 else available_columns,
-                        help="Choose which columns you want to analyze. You can select all or specific columns."
+                        value=st.session_state.selected_columns,
+                        help="Choose which columns you want to analyze. You can select all or specific columns.",
+                        key="column_selector"
                     )
+                
+                # Update session state with current selection
+                st.session_state.selected_columns = selected_columns
             
             with col2:
                 st.write("")
@@ -518,13 +542,13 @@ def render_data_selection():
                 if st.button("Select All Columns", use_container_width=True):
                     if st.session_state.selected_table == 'engineered_property_data':
                         land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
-                        selected_columns = [col for col in land_columns if col in available_columns]
+                        st.session_state.selected_columns = [col for col in land_columns if col in available_columns]
                     else:
-                        selected_columns = available_columns
+                        st.session_state.selected_columns = available_columns
                     st.rerun()
                 
                 if st.button("Clear Selection", use_container_width=True):
-                    selected_columns = []
+                    st.session_state.selected_columns = []
                     st.rerun()
             
             # Data filtering section
