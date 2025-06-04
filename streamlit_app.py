@@ -494,7 +494,7 @@ def render_data_selection():
                 # Special handling for Land Market (engineered_property_data)
                 if st.session_state.selected_table == 'engineered_property_data':
                     # For Land Market, only show specific columns
-                    land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
+                    land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'longitude', 'latitude']
                     available_columns = [col for col in land_columns if col in available_columns]
                     
                     selected_columns = st.multiselect(
@@ -517,7 +517,7 @@ def render_data_selection():
                 st.write("")
                 if st.button("Select All Columns", use_container_width=True):
                     if st.session_state.selected_table == 'engineered_property_data':
-                        land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
+                        land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'longitude', 'latitude']
                         st.session_state.selected_columns = [col for col in land_columns if col in available_columns]
                     else:
                         st.session_state.selected_columns = available_columns
