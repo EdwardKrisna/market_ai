@@ -196,35 +196,69 @@ class DataChatbot:
             y_col = plot_config.get('y')
             color_col = plot_config.get('color')
             title = plot_config.get('title', 'Data Visualization')
+            filters = plot_config.get('filters', {})
             
-            # Validate columns exist
-            if x_col and x_col not in df.columns:
+            # Apply filters to dataframe first
+            filtered_df = df.copy()
+            
+            for col, filter_config in filters.items():
+                if col in filtered_df.columns:
+                    if isinstance(filter_config, dict):
+                        if 'min' in filter_config and 'max' in filter_config:
+                            # Numeric range filter
+                            filtered_df = filtered_df[
+                                (filtered_df[col] >= filter_config['min']) & 
+                                (filtered_df[col] <= filter_config['max'])
+                            ]
+                        elif 'values' in filter_config:
+                            # Category filter
+                            filtered_df = filtered_df[filtered_df[col].isin(filter_config['values'])]
+                        elif 'contains' in filter_config:
+                            # Text filter
+                            filtered_df = filtered_df[filtered_df[col].str.contains(filter_config['contains'], case=False, na=False)]
+                    elif isinstance(filter_config, list):
+                        # Direct list of values
+                        filtered_df = filtered_df[filtered_df[col].isin(filter_config)]
+            
+            # Validate columns exist in filtered dataframe
+            if x_col and x_col not in filtered_df.columns:
                 return None
-            if y_col and y_col not in df.columns:
+            if y_col and y_col not in filtered_df.columns:
                 return None
-            if color_col and color_col not in df.columns:
+            if color_col and color_col not in filtered_df.columns:
                 color_col = None
+            
+            # Check if we have data after filtering
+            if len(filtered_df) == 0:
+                st.warning("Tidak ada data yang sesuai dengan filter yang diminta.")
+                return None
             
             # Create plot based on type
             if plot_type == 'scatter':
-                fig = px.scatter(df, x=x_col, y=y_col, color=color_col, title=title)
+                fig = px.scatter(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
             
             elif plot_type == 'bar':
-                if color_col:
-                    fig = px.bar(df, x=x_col, y=y_col, color=color_col, title=title)
+                if y_col:
+                    if color_col:
+                        fig = px.bar(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
+                    else:
+                        # Group by x_col and aggregate y_col
+                        grouped_df = filtered_df.groupby(x_col)[y_col].sum().reset_index()
+                        fig = px.bar(grouped_df, x=x_col, y=y_col, title=title)
                 else:
-                    # Group by x_col and aggregate y_col
-                    grouped_df = df.groupby(x_col)[y_col].mean().reset_index()
-                    fig = px.bar(grouped_df, x=x_col, y=y_col, title=title)
+                    # Count occurrences
+                    count_df = filtered_df[x_col].value_counts().reset_index()
+                    count_df.columns = [x_col, 'count']
+                    fig = px.bar(count_df, x=x_col, y='count', title=title)
             
             elif plot_type == 'line':
-                fig = px.line(df, x=x_col, y=y_col, color=color_col, title=title)
+                fig = px.line(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
             
             elif plot_type == 'histogram':
-                fig = px.histogram(df, x=x_col, color=color_col, title=title)
+                fig = px.histogram(filtered_df, x=x_col, color=color_col, title=title)
             
             elif plot_type == 'box':
-                fig = px.box(df, x=x_col, y=y_col, color=color_col, title=title)
+                fig = px.box(filtered_df, x=x_col, y=y_col, color=color_col, title=title)
             
             else:
                 return None
@@ -235,6 +269,17 @@ class DataChatbot:
                 showlegend=True,
                 margin=dict(l=50, r=50, t=50, b=50)
             )
+            
+            # Add info about filtering
+            if filters:
+                filter_info = f"Data difilter: {len(filtered_df):,} dari {len(df):,} records"
+                fig.add_annotation(
+                    text=filter_info,
+                    xref="paper", yref="paper",
+                    x=1, y=1, xanchor='right', yanchor='top',
+                    showarrow=False,
+                    font=dict(size=10, color="gray")
+                )
             
             return fig
             
@@ -356,16 +401,38 @@ class DataChatbot:
             "x": "column_name_for_x_axis",
             "y": "column_name_for_y_axis", 
             "color": "column_name_for_color_grouping",
-            "title": "Plot Title in Indonesian"
+            "title": "Plot Title in Indonesian",
+            "filters": {{
+                "column_name": {{"min": value, "max": value}},
+                "another_column": {{"values": ["val1", "val2"]}},
+                "text_column": {{"contains": "search_term"}}
+            }}
         }}
         END_PLOT
         
         Available plot types:
         - scatter: Scatter plot for numeric vs numeric
-        - bar: Bar chart for categorical vs numeric  
+        - bar: Bar chart for categorical vs numeric (if no y specified, will count occurrences)
         - line: Line chart for trends over time/sequence
         - histogram: Distribution of single numeric variable
         - box: Box plot for comparing distributions
+        
+        Filter types:
+        - Numeric range: {{"min": 2020, "max": 2025}} 
+        - Category values: {{"values": ["Jakarta", "Bandung"]}}
+        - Text search: {{"contains": "villa"}}
+        - Direct list: ["2020", "2021", "2022"]
+        
+        IMPORTANT INSTRUCTIONS FOR PLOTTING:
+        - DO NOT mention PLOT_CONFIG in your response text
+        - DO NOT show the JSON configuration to users
+        - Simply explain what chart you're creating and why
+        - Let the system handle the technical plot generation
+        - Keep your response focused on data insights, not technical details
+        - When filtering is requested (like "tahun 2020-2025"), always include appropriate filters
+        
+        Example response for "buat barchart jumlah unit dari tahun 2020-2025":
+        "Saya akan membuat bar chart untuk menampilkan jumlah unit properti dari tahun 2020 hingga 2025. Chart ini akan membantu melihat tren jumlah unit per tahun dalam periode tersebut."
         
         Only suggest plots when users explicitly ask for visualization, charts, or graphs.
         Always use Indonesian column names if available, and create titles in Indonesian.
@@ -1192,18 +1259,37 @@ def render_data_chatbot():
                 # Check if AI wants to create a plot
                 plot_config = chatbot.extract_plot_config(full_response)
                 if plot_config:
+                    # Remove plot configuration from displayed response
+                    clean_response = full_response
+                    if "PLOT_CONFIG:" in clean_response:
+                        start_idx = clean_response.find("PLOT_CONFIG:")
+                        end_idx = clean_response.find("END_PLOT") + len("END_PLOT")
+                        if end_idx > len("END_PLOT") - 1:  # END_PLOT was found
+                            clean_response = clean_response[:start_idx] + clean_response[end_idx:]
+                        clean_response = clean_response.strip()
+                    
+                    # Update displayed response without technical details
+                    response_container.markdown(clean_response)
+                    
+                    # Create and display the plot
                     st.markdown("**📊 Grafik yang dibuat untuk Anda:**")
                     fig = chatbot.create_plot(df, plot_config)
                     if fig:
                         st.plotly_chart(fig, use_container_width=True)
                     else:
                         st.error("Maaf, tidak dapat membuat grafik dengan konfigurasi tersebut.")
-                
-                # Add assistant response to history
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": full_response
-                })
+                    
+                    # Store clean response in history
+                    st.session_state.chatbot_messages.append({
+                        "role": "assistant", 
+                        "content": clean_response
+                    })
+                else:
+                    # No plot requested, store full response
+                    st.session_state.chatbot_messages.append({
+                        "role": "assistant", 
+                        "content": full_response
+                    })
                 
             except Exception as e:
                 st.error(f"Error generating response: {str(e)}")
@@ -1302,19 +1388,35 @@ def render_data_chatbot():
                 # Check for plot configuration
                 plot_config = chatbot.extract_plot_config(full_response)
                 if plot_config:
+                    # Clean response from technical details
+                    clean_response = full_response
+                    if "PLOT_CONFIG:" in clean_response:
+                        start_idx = clean_response.find("PLOT_CONFIG:")
+                        end_idx = clean_response.find("END_PLOT") + len("END_PLOT")
+                        if end_idx > len("END_PLOT") - 1:
+                            clean_response = clean_response[:start_idx] + clean_response[end_idx:]
+                        clean_response = clean_response.strip()
+                    
                     with st.chat_message("assistant"):
-                        st.markdown(full_response)
+                        st.markdown(clean_response)
                         st.markdown("**📊 Grafik yang dibuat untuk Anda:**")
                         fig = chatbot.create_plot(df, plot_config)
                         if fig:
                             st.plotly_chart(fig, use_container_width=True)
                         else:
                             st.error("Maaf, tidak dapat membuat grafik dengan konfigurasi tersebut.")
-                
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": full_response
-                })
+                    
+                    # Store clean response
+                    st.session_state.chatbot_messages.append({
+                        "role": "assistant", 
+                        "content": clean_response
+                    })
+                else:
+                    # Store full response if no plot
+                    st.session_state.chatbot_messages.append({
+                        "role": "assistant", 
+                        "content": full_response
+                    })
                 st.rerun()
                 
             except Exception as e:
