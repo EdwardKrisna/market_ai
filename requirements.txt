@@ -11,3 +11,7 @@ langchain-openai
 openai
 aiohttp
 beautifulsoup4
+langchain
+langchain-community
+langchain-openai
+
