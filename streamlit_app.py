@@ -181,12 +181,85 @@ class DataChatbot:
     
     def __init__(self, api_key: str):
         self.llm = ChatOpenAI(
-            model="gpt-4.1-mini",
+            model="gpt-4o-mini",
             api_key=api_key,
             temperature=0.3,
             max_tokens=1000,
             streaming=True
         )
+    
+    def create_plot(self, df: pd.DataFrame, plot_config: dict) -> go.Figure:
+        """Create plotly figure based on configuration"""
+        try:
+            plot_type = plot_config.get('type', 'scatter')
+            x_col = plot_config.get('x')
+            y_col = plot_config.get('y')
+            color_col = plot_config.get('color')
+            title = plot_config.get('title', 'Data Visualization')
+            
+            # Validate columns exist
+            if x_col and x_col not in df.columns:
+                return None
+            if y_col and y_col not in df.columns:
+                return None
+            if color_col and color_col not in df.columns:
+                color_col = None
+            
+            # Create plot based on type
+            if plot_type == 'scatter':
+                fig = px.scatter(df, x=x_col, y=y_col, color=color_col, title=title)
+            
+            elif plot_type == 'bar':
+                if color_col:
+                    fig = px.bar(df, x=x_col, y=y_col, color=color_col, title=title)
+                else:
+                    # Group by x_col and aggregate y_col
+                    grouped_df = df.groupby(x_col)[y_col].mean().reset_index()
+                    fig = px.bar(grouped_df, x=x_col, y=y_col, title=title)
+            
+            elif plot_type == 'line':
+                fig = px.line(df, x=x_col, y=y_col, color=color_col, title=title)
+            
+            elif plot_type == 'histogram':
+                fig = px.histogram(df, x=x_col, color=color_col, title=title)
+            
+            elif plot_type == 'box':
+                fig = px.box(df, x=x_col, y=y_col, color=color_col, title=title)
+            
+            else:
+                return None
+            
+            # Update layout for better appearance
+            fig.update_layout(
+                height=400,
+                showlegend=True,
+                margin=dict(l=50, r=50, t=50, b=50)
+            )
+            
+            return fig
+            
+        except Exception as e:
+            st.error(f"Error creating plot: {str(e)}")
+            return None
+    
+    def extract_plot_config(self, ai_response: str) -> dict:
+        """Extract plot configuration from AI response"""
+        try:
+            # Look for plot configuration in AI response
+            if "PLOT_CONFIG:" in ai_response:
+                # Extract JSON configuration
+                start_idx = ai_response.find("PLOT_CONFIG:") + len("PLOT_CONFIG:")
+                end_idx = ai_response.find("END_PLOT", start_idx)
+                if end_idx == -1:
+                    end_idx = len(ai_response)
+                
+                config_str = ai_response[start_idx:end_idx].strip()
+                plot_config = json.loads(config_str)
+                return plot_config
+        except:
+            pass
+        
+        return None
     
     def generate_data_summary(self, df: pd.DataFrame) -> str:
         """Generate comprehensive data summary including more details"""
@@ -273,6 +346,29 @@ class DataChatbot:
         - Perform calculations across all {len(df):,} records
         - Base all insights on the complete dataset analysis
         - You can only answer with Bahasa Indonesia
+        
+        PLOTTING CAPABILITIES:
+        When users ask for visualizations or plots, you can create them using this format:
+        
+        PLOT_CONFIG:
+        {{
+            "type": "scatter|bar|line|histogram|box",
+            "x": "column_name_for_x_axis",
+            "y": "column_name_for_y_axis", 
+            "color": "column_name_for_color_grouping",
+            "title": "Plot Title in Indonesian"
+        }}
+        END_PLOT
+        
+        Available plot types:
+        - scatter: Scatter plot for numeric vs numeric
+        - bar: Bar chart for categorical vs numeric  
+        - line: Line chart for trends over time/sequence
+        - histogram: Distribution of single numeric variable
+        - box: Box plot for comparing distributions
+        
+        Only suggest plots when users explicitly ask for visualization, charts, or graphs.
+        Always use Indonesian column names if available, and create titles in Indonesian.
         
         Remember: You have access to every single record in this dataset for comprehensive analysis.
         """
@@ -1093,6 +1189,16 @@ def render_data_chatbot():
                     full_response = response.content
                     response_container.markdown(full_response)
                 
+                # Check if AI wants to create a plot
+                plot_config = chatbot.extract_plot_config(full_response)
+                if plot_config:
+                    st.markdown("**📊 Grafik yang dibuat untuk Anda:**")
+                    fig = chatbot.create_plot(df, plot_config)
+                    if fig:
+                        st.plotly_chart(fig, use_container_width=True)
+                    else:
+                        st.error("Maaf, tidak dapat membuat grafik dengan konfigurasi tersebut.")
+                
                 # Add assistant response to history
                 st.session_state.chatbot_messages.append({
                     "role": "assistant", 
@@ -1179,9 +1285,9 @@ def render_data_chatbot():
                 st.error(f"Error generating response: {str(e)}")
     
     with col4:
-        if st.button("🔍 Data Quality", use_container_width=True):
-            quality_prompt = "Assess the data quality of this dataset. What are the missing values, outliers, and data quality issues?"
-            st.session_state.chatbot_messages.append({"role": "user", "content": quality_prompt})
+        if st.button("📊 Create Chart", use_container_width=True):
+            chart_prompt = "Buatkan saya grafik/chart yang menarik untuk memvisualisasikan data ini. Pilih jenis chart yang paling sesuai dengan data."
+            st.session_state.chatbot_messages.append({"role": "user", "content": chart_prompt})
             try:
                 messages = [SystemMessage(content=st.session_state.chatbot_system_prompt)]
                 for msg in st.session_state.chatbot_messages:
@@ -1191,9 +1297,23 @@ def render_data_chatbot():
                         messages.append(AIMessage(content=msg["content"]))
                 
                 response = chatbot.llm.invoke(messages)
+                full_response = response.content
+                
+                # Check for plot configuration
+                plot_config = chatbot.extract_plot_config(full_response)
+                if plot_config:
+                    with st.chat_message("assistant"):
+                        st.markdown(full_response)
+                        st.markdown("**📊 Grafik yang dibuat untuk Anda:**")
+                        fig = chatbot.create_plot(df, plot_config)
+                        if fig:
+                            st.plotly_chart(fig, use_container_width=True)
+                        else:
+                            st.error("Maaf, tidak dapat membuat grafik dengan konfigurasi tersebut.")
+                
                 st.session_state.chatbot_messages.append({
                     "role": "assistant", 
-                    "content": response.content
+                    "content": full_response
                 })
                 st.rerun()
                 
@@ -1235,7 +1355,7 @@ def render_data_chatbot():
         st.sidebar.markdown("---")
         st.sidebar.markdown("**💬 Chat Status**")
         st.sidebar.success(f"✅ {len(st.session_state.chatbot_messages)} messages")
-        st.sidebar.info(f"🤖 AI Model: gpt-4.1-mini")
+        st.sidebar.info(f"🤖 AI Model: gpt-4o-mini")
         st.sidebar.info(f"📊 Dataset: {df.shape[0]:,} rows")
 
 def main():
