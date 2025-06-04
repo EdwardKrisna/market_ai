@@ -486,46 +486,45 @@ def render_data_selection():
             st.markdown("---")
             
             # Column selection
-            col1, col2 = st.columns([2, 1])
+            st.markdown("### 📊 **Column Selection**")
             
-            with col1:
-                available_columns = st.session_state.table_columns['column_name'].tolist()
+            available_columns = st.session_state.table_columns['column_name'].tolist()
+            
+            # Special handling for Land Market (engineered_property_data)
+            if st.session_state.selected_table == 'engineered_property_data':
+                # For Land Market, only show specific columns
+                land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
+                available_columns = [col for col in land_columns if col in available_columns]
                 
-                # Special handling for Land Market (engineered_property_data)
-                if st.session_state.selected_table == 'engineered_property_data':
-                    # For Land Market, only show specific columns
-                    land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
-                    available_columns = [col for col in land_columns if col in available_columns]
-                    
-                    selected_columns = st.multiselect(
-                        "Columns for Land Market analysis:",
-                        available_columns,
-                        default=available_columns,
-                        help="These are the pre-selected columns for Land Market analysis."
-                    )
-                else:
-                    # For other tables, show all columns with flexible selection
-                    selected_columns = st.multiselect(
-                        "Select columns to include in your analysis:",
-                        available_columns,
-                        default=available_columns[:10] if len(available_columns) > 10 else available_columns,
-                        help="Choose which columns you want to analyze. You can select all or specific columns."
-                    )
-            
-            with col2:
-                st.write("")
-                st.write("")
-                if st.button("Select All Columns", use_container_width=True):
-                    if st.session_state.selected_table == 'engineered_property_data':
-                        land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','hpm', 'geometry']
-                        selected_columns = [col for col in land_columns if col in available_columns]
+                selected_columns = st.multiselect(
+                    "Select columns for Land Market analysis (remove unwanted ones):",
+                    available_columns,
+                    default=available_columns,  # All Land Market columns selected by default
+                    help="All required Land Market columns are selected. Remove any you don't need for analysis."
+                )
+                
+                # Show column count
+                st.info(f"📊 {len(selected_columns)} of {len(available_columns)} Land Market columns selected")
+                
+            else:
+                # For other tables, show all columns with all selected by default
+                selected_columns = st.multiselect(
+                    "Select columns for analysis (remove unwanted ones):",
+                    available_columns,
+                    default=available_columns,  # All columns selected by default
+                    help="All columns are selected by default. Remove the ones you don't need for your analysis."
+                )
+                
+                # Show column count and quick info
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.info(f"📊 {len(selected_columns)} of {len(available_columns)} columns selected")
+                with col2:
+                    if len(selected_columns) != len(available_columns):
+                        removed_count = len(available_columns) - len(selected_columns)
+                        st.info(f"🗑️ {removed_count} columns removed")
                     else:
-                        selected_columns = available_columns
-                    st.rerun()
-                
-                if st.button("Clear Selection", use_container_width=True):
-                    selected_columns = []
-                    st.rerun()
+                        st.info("✅ All columns included")
             
             # Data filtering section
             if selected_columns:
