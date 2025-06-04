@@ -321,7 +321,7 @@ def render_database_connection():
     """Render database connection section"""
     st.markdown('<div class="section-header">🔗 Database Connection</div>', unsafe_allow_html=True)
     
-    # Get connection parameters from secrets
+    # Get connection parameters from secrets and auto-connect
     try:
         db_user = st.secrets["database"]["user"]
         db_pass = st.secrets["database"]["password"]
@@ -332,16 +332,18 @@ def render_database_connection():
         
         st.success("✅ Database configuration loaded from secrets")
         
-        if st.button("Connect to Database", type="primary"):
-            success, message = st.session_state.db_connection.connect(
-                db_user, db_pass, db_host, db_port, db_name, schema
-            )
-            
-            if success:
-                st.markdown(f'<div class="success-box">✅ {message}</div>', unsafe_allow_html=True)
-            else:
-                st.markdown(f'<div class="error-box">❌ {message}</div>', unsafe_allow_html=True)
+        # Auto-connect if not already connected
+        if not st.session_state.db_connection.connection_status:
+            with st.spinner("Connecting to database..."):
+                success, message = st.session_state.db_connection.connect(
+                    db_user, db_pass, db_host, db_port, db_name, schema
+                )
                 
+                if success:
+                    st.markdown(f'<div class="success-box">✅ {message}</div>', unsafe_allow_html=True)
+                else:
+                    st.markdown(f'<div class="error-box">❌ {message}</div>', unsafe_allow_html=True)
+                    
     except KeyError as e:
         st.error(f"❌ Missing database configuration in secrets.toml: {e}")
         st.info("Please ensure your `.streamlit/secrets.toml` file contains the [database] section with all required fields")
