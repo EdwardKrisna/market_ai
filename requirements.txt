@@ -1,0 +1,13 @@
+streamlit
+pandas
+geopandas
+numpy
+matplotlib
+seaborn
+plotly
+sqlalchemy
+langchain
+langchain-openai
+openai
+aiohttp
+beautifulsoup4
