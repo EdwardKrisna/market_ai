@@ -24,6 +24,9 @@ import os
 from langchain.chat_models import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
+import pygwalker as pyg
+from pygwalker.api.streamlit import StreamlitRenderer
+
 warnings.filterwarnings('ignore')
 
 # Set page config
@@ -302,7 +305,6 @@ def get_api_key(key_name: str = "main") -> str:
     try:
         secrets_api_key = st.secrets["openai"]["api_key"]
         if secrets_api_key:
-            st.success("✅ Using OpenAI API key from secrets.toml")
             return secrets_api_key
     except:
         pass
@@ -402,7 +404,7 @@ def render_data_selection():
             'color': '#34495e'
         }
     }
-    
+
     # Table selection
     st.markdown("### 📋 **Select Data Table**")
     st.markdown("Choose one of the available property datasets:")
@@ -1318,6 +1320,23 @@ def render_data_chatbot():
         st.sidebar.info(f"🤖 AI Model: gpt-4.1-mini")
         st.sidebar.info(f"📊 Dataset: {df.shape[0]:,} rows")
 
+def render_dashboard():
+    """Render visual analytics dashboard with Pygwalker"""
+    st.markdown('<div class="section-header">📊 Dashboard</div>', unsafe_allow_html=True)
+    if st.session_state.current_data is None:
+        st.warning("⚠️ Please load property data first using the Data Selection section")
+        st.info("💡 Go to 'Data Selection & Filtering' tab and load your dataset")
+        return
+    
+    # Only show the columns the user selected (if any)
+    df = st.session_state.current_data.copy()
+    st.info("Use the interactive dashboard below to visually explore your dataset. You can drag, drop, and analyze any column!")
+    
+    # Render the dashboard
+    pyg_app = StreamlitRenderer(df)
+    pyg_app.explorer()
+
+
 def main():
     """Main application function"""
     # Initialize session state
@@ -1331,7 +1350,8 @@ def main():
     sections = [
         "🔗 Database Connection",
         "🎯 Data Selection & Filtering",
-        "💬 Chat with AI"
+        "💬 Chat with AI",
+        "📊 Dashboard"
     ]
     
     selected_section = st.sidebar.radio("Go to:", sections)
@@ -1345,6 +1365,9 @@ def main():
     
     elif selected_section == "💬 Chat with AI":
         render_data_chatbot()
+    
+    elif selected_section == "📊 Dashboard":
+        render_dashboard()
     
     # Sidebar info and status
     st.sidebar.markdown("---")
