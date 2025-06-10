@@ -529,90 +529,130 @@ def render_data_selection():
             # Data filtering section
             if selected_columns:
                 st.markdown('<div class="filter-section">', unsafe_allow_html=True)
-                st.markdown("### 🔍 **Data Filtering (Optional)**")
+                st.markdown("### 🔍 **Data Filtering**")
                 
-                # Special handling for Land Market
-                if st.session_state.selected_table == 'engineered_property_data':
-                    st.warning("⚠️ **Land Market Requirements:** You must select exactly one wadmkc to continue (to prevent excessive data loading)")
-                    
-                    # wadmkc filter (required for Land Market)
-                    st.markdown("#### 🎯 **Required: Select wadmkc**")
-                    with st.spinner("Loading wadmkc options..."):
-                        wadmkc_values, wadmkc_msg = st.session_state.db_connection.get_column_unique_values(
-                            st.session_state.selected_table, 
-                            'wadmkc',
-                            st.session_state.get('schema', 'public')
+                # --- Start: Cascading Region Filters for Land Market ---
+                db = st.session_state.db_connection
+                schema = st.session_state.get('schema', 'public')
+                table = st.session_state.selected_table
+                filters = {}
+
+                # 1. Province/Region
+                province_values, _ = db.get_column_unique_values(table, 'wadmpr', schema)
+                selected_province = st.selectbox(
+                    "Select Province/Region:",
+                    [""] + province_values,
+                    key="filter_province"
+                )
+
+                if selected_province:
+                    filters['wadmpr'] = [selected_province]
+
+                    # 2. Regency/City
+                    regency_query = f'''
+                        SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
+                        WHERE wadmpr = '{selected_province}'
+                        ORDER BY wadmkk
+                    '''
+                    regency_df, _ = db.execute_query(regency_query)
+                    regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
+                    selected_regency = st.selectbox(
+                        "Select Regency/City:",
+                        [""] + regency_values,
+                        key="filter_regency"
+                    )
+
+                    if selected_regency:
+                        filters['wadmkk'] = [selected_regency]
+
+                        # 3. District
+                        district_query = f'''
+                            SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
+                            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
+                            ORDER BY wadmkc
+                        '''
+                        district_df, _ = db.execute_query(district_query)
+                        district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
+                        selected_district = st.selectbox(
+                            "Select District:",
+                            [""] + district_values,
+                            key="filter_district"
                         )
-                    
-                    if wadmkc_values:
-                        selected_wadmkc = st.selectbox(
-                            "Choose one wadmkc:",
-                            [""] + wadmkc_values,
-                            help="You must select exactly one wadmkc area for analysis"
-                        )
-                        
-                        if not selected_wadmkc:
-                            st.error("❌ Please select a wadmkc to continue")
-                            return
-                        
-                        # Initialize filters for Land Market
-                        filters = {'wadmkc': [selected_wadmkc]}
-                        
-                        # Optional filters for Land Market
-                        st.markdown("#### 🔧 **Optional Filters**")
-                        
-                        # Year filter
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown("**Filter by Year:**")
-                            with st.spinner("Loading years..."):
-                                year_values, year_msg = st.session_state.db_connection.get_column_unique_values(
-                                    st.session_state.selected_table, 
-                                    'tahun_pengambilan_data',
-                                    st.session_state.get('schema', 'public')
-                                )
-                            
-                            if year_values:
-                                selected_years = st.multiselect(
-                                    "Select years:",
-                                    year_values,
-                                    default=year_values,
-                                    help="Choose which years to include in analysis"
-                                )
-                                if len(selected_years) < len(year_values):
-                                    filters['tahun_pengambilan_data'] = selected_years
-                        
-                        # HPM price range filter
-                        with col2:
-                            st.markdown("**Filter by HPM (Price Range):**")
-                            with st.spinner("Loading HPM range..."):
-                                hpm_query = f"""
-                                SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
-                                FROM "{st.session_state.get('schema', 'public')}"."{st.session_state.selected_table}"
-                                WHERE "wadmkc" = '{selected_wadmkc}' AND "hpm" IS NOT NULL
-                                """
-                                hpm_result, hpm_msg = st.session_state.db_connection.execute_query(hpm_query)
-                            
-                            if hpm_result is not None and len(hpm_result) > 0:
-                                min_hpm = float(hpm_result['min_hpm'].iloc[0])
-                                max_hpm = float(hpm_result['max_hpm'].iloc[0])
-                                
-                                st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
-                                
-                                hpm_range = st.slider(
-                                    "Select HPM range:",
-                                    min_value=min_hpm,
-                                    max_value=max_hpm,
-                                    value=(min_hpm, max_hpm),
-                                    step=1000.0,
-                                    help="Filter properties by price per square meter"
-                                )
-                                
-                                if hpm_range != (min_hpm, max_hpm):
-                                    filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
-                    else:
-                        st.error(f"Could not load wadmkc values: {wadmkc_msg}")
-                        return
+
+                        if selected_district:
+                            filters['wadmkc'] = [selected_district]
+
+                            # 4. Subdistrict (optional)
+                            subdistrict_query = f'''
+                                SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
+                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
+                                ORDER BY wadmkd
+                            '''
+                            subdistrict_df, _ = db.execute_query(subdistrict_query)
+                            subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
+                            selected_subdistrict = st.selectbox(
+                                "Select Subdistrict (optional):",
+                                [""] + subdistrict_values,
+                                key="filter_subdistrict"
+                            )
+
+                            if selected_subdistrict:
+                                filters['wadmkd'] = [selected_subdistrict]
+
+                # --- End: Cascading Region Filters ---
+
+                # -- Optional filters (only show if district is picked, or subdistrict for stricter filter) --
+                if filters.get('wadmkc'):
+                    st.markdown("#### 🔧 **Optional Filters**")
+                    col1, col2 = st.columns(2)
+
+                    with col1:
+                        st.markdown("**Filter by Year:**")
+                        with st.spinner("Loading years..."):
+                            year_values, year_msg = db.get_column_unique_values(
+                                table, 'tahun_pengambilan_data', schema
+                            )
+                        if year_values:
+                            selected_years = st.multiselect(
+                                "Select years:",
+                                year_values,
+                                default=year_values,
+                                help="Choose which years to include in the analysis"
+                            )
+                            if len(selected_years) < len(year_values):
+                                filters['tahun_pengambilan_data'] = selected_years
+
+                    with col2:
+                        st.markdown("**Filter by HPM (Price Range):**")
+                        # Build dynamic WHERE for hpm range query
+                        where_parts = []
+                        for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
+                            if filters.get(key):
+                                where_parts.append(f'"{key}" = \'{filters[key][0]}\'')
+                        where_clause = " AND ".join(where_parts)
+                        hpm_query = f"""
+                            SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
+                            FROM "{schema}"."{table}"
+                            WHERE {where_clause} AND "hpm" IS NOT NULL
+                        """
+                        hpm_result, _ = db.execute_query(hpm_query)
+                        if hpm_result is not None and len(hpm_result) > 0:
+                            min_hpm = float(hpm_result['min_hpm'].iloc[0])
+                            max_hpm = float(hpm_result['max_hpm'].iloc[0])
+
+                            st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
+
+                            hpm_range = st.slider(
+                                "Select HPM range:",
+                                min_value=min_hpm,
+                                max_value=max_hpm,
+                                value=(min_hpm, max_hpm),
+                                step=1000.0,
+                                help="Filter properties by price per square meter"
+                            )
+                            if hpm_range != (min_hpm, max_hpm):
+                                filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
+
                 
                 else:
                     # Flexible filtering for other tables
