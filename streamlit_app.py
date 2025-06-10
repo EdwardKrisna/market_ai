@@ -493,7 +493,7 @@ def render_data_selection():
             # Special handling for Land Market (engineered_property_data)
             if st.session_state.selected_table == 'engineered_property_data':
                 # For Land Market, only show specific columns
-                land_columns = ['WADMPR','wadmkk','wadmkc','wadmkd','tahun_pengambilan_data','luas_tanah','kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
+                land_columns = ['wadmpr','wadmkk','wadmkc','wadmkd','tahun_pengambilan_data','luas_tanah','kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
                 available_columns = [col for col in land_columns if col in available_columns]
                 
                 selected_columns = st.multiselect(
