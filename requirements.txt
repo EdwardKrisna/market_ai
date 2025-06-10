@@ -17,3 +17,8 @@ langchain-openai
 psycopg2-binary
 plotly
 pygwalker
+geovista
+pyvista
+rasterio
+colorcet
+stpyvista
