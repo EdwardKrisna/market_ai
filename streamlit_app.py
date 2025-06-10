@@ -24,7 +24,7 @@ import os
 from langchain.chat_models import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
-import pygwalker as pyg
+# import pygwalker as pyg
 from pygwalker.api.streamlit import StreamlitRenderer
 
 warnings.filterwarnings('ignore')
