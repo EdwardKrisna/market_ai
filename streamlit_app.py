@@ -529,15 +529,16 @@ def render_data_selection():
             # Data filtering section
             if selected_columns:
                 st.markdown('<div class="filter-section">', unsafe_allow_html=True)
-                st.markdown("### 🔍 **Data Filtering !**")
+                st.markdown("### 🔍 **Data Filtering**")
                 
-                # --- Start: Cascading Region Filters for Land Market ---
+                # --- Cascading Region Filters for Land Market (English version) ---
+
                 db = st.session_state.db_connection
                 schema = st.session_state.get('schema', 'public')
                 table = st.session_state.selected_table
                 filters = {}
 
-                # 1. Province/Region
+                # 1. Province (wadmpr)
                 province_values, _ = db.get_column_unique_values(table, 'wadmpr', schema)
                 selected_province = st.selectbox(
                     "Select Province/Region:",
@@ -548,7 +549,7 @@ def render_data_selection():
                 if selected_province:
                     filters['wadmpr'] = [selected_province]
 
-                    # 2. Regency/City
+                    # 2. Regency/City (wadmkk)
                     regency_query = f'''
                         SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
                         WHERE wadmpr = '{selected_province}'
@@ -565,7 +566,7 @@ def render_data_selection():
                     if selected_regency:
                         filters['wadmkk'] = [selected_regency]
 
-                        # 3. District
+                        # 3. District (wadmkc)
                         district_query = f'''
                             SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
                             WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
@@ -582,7 +583,7 @@ def render_data_selection():
                         if selected_district:
                             filters['wadmkc'] = [selected_district]
 
-                            # 4. Subdistrict (optional)
+                            # 4. Subdistrict (wadmkd, optional)
                             subdistrict_query = f'''
                                 SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
                                 WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
@@ -599,13 +600,14 @@ def render_data_selection():
                             if selected_subdistrict:
                                 filters['wadmkd'] = [selected_subdistrict]
 
-                # --- End: Cascading Region Filters ---
+                # --- END: Region Filters ---
 
-                # -- Optional filters (only show if district is picked, or subdistrict for stricter filter) --
+                # --- Block next steps unless District is selected ---
                 if filters.get('wadmkc'):
-                    st.markdown("#### 🔧 **Optional Filters**")
-                    col1, col2 = st.columns(2)
+                    st.success("✅ District selected")
 
+                    # ---- Optional Filters Example ----
+                    col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("**Filter by Year:**")
                         with st.spinner("Loading years..."):
@@ -617,14 +619,14 @@ def render_data_selection():
                                 "Select years:",
                                 year_values,
                                 default=year_values,
-                                help="Choose which years to include in the analysis"
+                                help="Choose which years to include in analysis"
                             )
                             if len(selected_years) < len(year_values):
                                 filters['tahun_pengambilan_data'] = selected_years
 
                     with col2:
                         st.markdown("**Filter by HPM (Price Range):**")
-                        # Build dynamic WHERE for hpm range query
+                        # Build WHERE clause for HPM range
                         where_parts = []
                         for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
                             if filters.get(key):
@@ -652,7 +654,6 @@ def render_data_selection():
                             )
                             if hpm_range != (min_hpm, max_hpm):
                                 filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
-
                 
                 else:
                     # Flexible filtering for other tables
