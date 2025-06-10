@@ -1325,15 +1325,14 @@ def get_pyg_renderer(df: pd.DataFrame, spec_path: str) -> "StreamlitRenderer":
     return StreamlitRenderer(df, spec=spec_path, spec_io_mode="rw")
 
 def render_dashboard():
-    st.markdown('<div class="section-header">📊 Dashboard</div>', unsafe_allow_html=True)
+    st.header("Pygwalker Test")
     if st.session_state.current_data is None:
-        st.warning("⚠️ Please load property data first using the Data Selection section")
-        st.info("💡 Go to 'Data Selection & Filtering' tab and load your dataset")
+        st.warning("No data loaded yet.")
         return
-
-    df = st.session_state.current_data.copy()
-    spec_path = f"./pyg_config_{st.session_state.selected_table or 'default'}.json"  # one config file per table
-    pyg_app = get_pyg_renderer(df, spec_path)
+    df = st.session_state.current_data
+    st.write("Data shape:", df.shape)
+    st.write(df.head())
+    pyg_app = StreamlitRenderer(df)
     pyg_app.explorer()
 
 
