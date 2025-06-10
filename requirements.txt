@@ -16,3 +16,4 @@ langchain-community
 langchain-openai
 psycopg2-binary
 plotly
+pygwalker
