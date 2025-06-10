@@ -641,10 +641,22 @@ def render_data_selection():
                     col1, col2 = st.columns(2)
                     with col1:
                         st.markdown("**Filter by Year:**")
-                        with st.spinner("Loading years..."):
-                            year_values, year_msg = db.get_column_unique_values(
-                                table, 'tahun_pengambilan_data', schema
-                            )
+
+                        # Build WHERE clause for years (by area)
+                        area_where_parts = []
+                        for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
+                            if filters.get(key):
+                                area_where_parts.append(f'"{key}" = \'{filters[key][0]}\'')
+                        area_where_clause = " AND ".join(area_where_parts)
+                        years_query = f"""
+                            SELECT DISTINCT tahun_pengambilan_data 
+                            FROM "{schema}"."{table}"
+                            WHERE {area_where_clause}
+                            ORDER BY tahun_pengambilan_data
+                        """
+                        years_df, _ = db.execute_query(years_query)
+                        year_values = years_df['tahun_pengambilan_data'].dropna().tolist() if years_df is not None else []
+
                         if year_values:
                             selected_years = st.multiselect(
                                 "Select years:",
@@ -655,36 +667,32 @@ def render_data_selection():
                             if len(selected_years) < len(year_values):
                                 filters['tahun_pengambilan_data'] = selected_years
 
-                    with col2:
-                        st.markdown("**Filter by HPM (Price Range):**")
-                        # Build WHERE clause for HPM range
-                        where_parts = []
-                        for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
-                            if filters.get(key):
-                                where_parts.append(f'"{key}" = \'{filters[key][0]}\'')
-                        where_clause = " AND ".join(where_parts)
-                        hpm_query = f"""
-                            SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
-                            FROM "{schema}"."{table}"
-                            WHERE {where_clause} AND "hpm" IS NOT NULL
-                        """
-                        hpm_result, _ = db.execute_query(hpm_query)
-                        if hpm_result is not None and len(hpm_result) > 0:
-                            min_hpm = float(hpm_result['min_hpm'].iloc[0])
-                            max_hpm = float(hpm_result['max_hpm'].iloc[0])
 
-                            st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
+                        with col2:
+                            st.markdown("**Filter by HPM (Price Range):**")
+                            hpm_query = f"""
+                                SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
+                                FROM "{schema}"."{table}"
+                                WHERE {area_where_clause} AND "hpm" IS NOT NULL
+                            """
+                            hpm_result, _ = db.execute_query(hpm_query)
+                            if hpm_result is not None and len(hpm_result) > 0:
+                                min_hpm = float(hpm_result['min_hpm'].iloc[0])
+                                max_hpm = float(hpm_result['max_hpm'].iloc[0])
 
-                            hpm_range = st.slider(
-                                "Select HPM range:",
-                                min_value=min_hpm,
-                                max_value=max_hpm,
-                                value=(min_hpm, max_hpm),
-                                step=1000.0,
-                                help="Filter properties by price per square meter"
-                            )
-                            if hpm_range != (min_hpm, max_hpm):
-                                filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
+                                st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
+
+                                hpm_range = st.slider(
+                                    "Select HPM range:",
+                                    min_value=min_hpm,
+                                    max_value=max_hpm,
+                                    value=(min_hpm, max_hpm),
+                                    step=1000.0,
+                                    help="Filter properties by price per square meter"
+                                )
+                                if hpm_range != (min_hpm, max_hpm):
+                                    filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
+
                 
                 else:
                     # Flexible filtering for other tables
