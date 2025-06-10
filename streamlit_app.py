@@ -493,7 +493,7 @@ def render_data_selection():
             # Special handling for Land Market (engineered_property_data)
             if st.session_state.selected_table == 'engineered_property_data':
                 # For Land Market, only show specific columns
-                land_columns = ['WADMPR','WADMKK','WADMKC','WADMKD','tahun_pengambilan_data','luas_tanah','kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
+                land_columns = ['wadmpr','wadmkk','wadmkc','wadmkd','tahun_pengambilan_data','luas_tanah','kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
                 available_columns = [col for col in land_columns if col in available_columns]
                 
                 selected_columns = st.multiselect(
@@ -533,30 +533,30 @@ def render_data_selection():
                 
                 # Special handling for Land Market
                 if st.session_state.selected_table == 'engineered_property_data':
-                    st.warning("⚠️ **Land Market Requirements:** You must select exactly one WADMKC to continue (to prevent excessive data loading)")
+                    st.warning("⚠️ **Land Market Requirements:** You must select exactly one wadmkc to continue (to prevent excessive data loading)")
                     
-                    # WADMKC filter (required for Land Market)
-                    st.markdown("#### 🎯 **Required: Select WADMKC**")
-                    with st.spinner("Loading WADMKC options..."):
+                    # wadmkc filter (required for Land Market)
+                    st.markdown("#### 🎯 **Required: Select wadmkc**")
+                    with st.spinner("Loading wadmkc options..."):
                         wadmkc_values, wadmkc_msg = st.session_state.db_connection.get_column_unique_values(
                             st.session_state.selected_table, 
-                            'WADMKC',
+                            'wadmkc',
                             st.session_state.get('schema', 'public')
                         )
                     
                     if wadmkc_values:
                         selected_wadmkc = st.selectbox(
-                            "Choose one WADMKC:",
+                            "Choose one wadmkc:",
                             [""] + wadmkc_values,
-                            help="You must select exactly one WADMKC area for analysis"
+                            help="You must select exactly one wadmkc area for analysis"
                         )
                         
                         if not selected_wadmkc:
-                            st.error("❌ Please select a WADMKC to continue")
+                            st.error("❌ Please select a wadmkc to continue")
                             return
                         
                         # Initialize filters for Land Market
-                        filters = {'WADMKC': [selected_wadmkc]}
+                        filters = {'wadmkc': [selected_wadmkc]}
                         
                         # Optional filters for Land Market
                         st.markdown("#### 🔧 **Optional Filters**")
@@ -589,7 +589,7 @@ def render_data_selection():
                                 hpm_query = f"""
                                 SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
                                 FROM "{st.session_state.get('schema', 'public')}"."{st.session_state.selected_table}"
-                                WHERE "WADMKC" = '{selected_wadmkc}' AND "hpm" IS NOT NULL
+                                WHERE "wadmkc" = '{selected_wadmkc}' AND "hpm" IS NOT NULL
                                 """
                                 hpm_result, hpm_msg = st.session_state.db_connection.execute_query(hpm_query)
                             
@@ -611,7 +611,7 @@ def render_data_selection():
                                 if hpm_range != (min_hpm, max_hpm):
                                     filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
                     else:
-                        st.error(f"Could not load WADMKC values: {wadmkc_msg}")
+                        st.error(f"Could not load wadmkc values: {wadmkc_msg}")
                         return
                 
                 else:
@@ -908,7 +908,7 @@ def render_data_chatbot():
                 Silakan tanyakan apa pun tentang data Anda - Saya dapat membantu dengan: 
                 • Analisis dan wawasan statistik 
                 • Pola dan tren data
-                • Analisis pasar properti 
+                • Analisis pasar properti
                 • Penilaian kualitas data 
                 • Rekomendasi visualisasi 
                 • Pertanyaan khusus tentang properti Anda
