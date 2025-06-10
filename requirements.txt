@@ -19,6 +19,7 @@ plotly
 pygwalker
 geovista
 pyvista
+vtk
 rasterio
 colorcet
 stpyvista
