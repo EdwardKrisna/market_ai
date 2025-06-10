@@ -31,7 +31,7 @@ warnings.filterwarnings('ignore')
 
 # Set page config
 st.set_page_config(
-    page_title="Real Estate Market Intelligence Platform",
+    page_title="RHR Market Research Agent",
     page_icon="🏠",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -321,7 +321,7 @@ def get_api_key(key_name: str = "main") -> str:
 
 def render_database_connection():
     """Render database connection section"""
-    st.markdown('<div class="section-header">🔗 Database Connection</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🔗 Koneksi Database</div>', unsafe_allow_html=True)
     
     # Get connection parameters from secrets and auto-connect
     try:
@@ -353,13 +353,13 @@ def render_database_connection():
         st.error(f"❌ Error loading database configuration: {e}")
     
     if st.session_state.db_connection.connection_status:
-        st.markdown('<div class="success-box">🟢 Database Connected</div>', unsafe_allow_html=True)
+        st.markdown('<div class="success-box">🟢 Tersambung ke Database</div>', unsafe_allow_html=True)
     else:
-        st.markdown('<div class="info-box">🔴 No Database Connection</div>', unsafe_allow_html=True)
+        st.markdown('<div class="info-box">🔴 Belum Ada Koneksi ke Database</div>', unsafe_allow_html=True)
 
 def render_data_selection():
     """Render data selection and filtering section"""
-    st.markdown('<div class="section-header">🎯 Data Selection & Filtering</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">🎯 Pilih dan Filter Data</div>', unsafe_allow_html=True)
     
     if not st.session_state.db_connection.connection_status:
         st.warning("⚠️ Please connect to database first")
@@ -406,8 +406,8 @@ def render_data_selection():
     }
 
     # Table selection
-    st.markdown("### 📋 **Select Data Table**")
-    st.markdown("Choose one of the available property datasets:")
+    st.markdown("### 📋 **Pilih Data!**")
+    st.markdown("Pilih salah satu data yang tersedia!")
     
     # Create clickable table cards
     cols = st.columns(3)
@@ -919,12 +919,12 @@ def render_data_selection():
 
 def render_data_chatbot():
     """Render Data Chatbot section"""
-    st.markdown('<div class="section-header">💬 Chat with AI</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">💬 RHR AI</div>', unsafe_allow_html=True)
     
     # Check prerequisites
     if st.session_state.current_data is None:
         st.warning("⚠️ Please load property data first using the Data Selection section")
-        st.info("💡 Go to 'Data Selection & Filtering' tab and load your dataset")
+        st.info("💡 Go to 'Pilih dan Filter Data' tab and load your dataset")
         return
     
     api_key = get_api_key("chatbot")
@@ -1328,7 +1328,7 @@ def render_dashboard():
     st.markdown('<div class="section-header">📊 Dashboard</div>', unsafe_allow_html=True)
     if st.session_state.current_data is None:
         st.warning("⚠️ Please load property data first using the Data Selection section")
-        st.info("💡 Go to 'Data Selection & Filtering' tab and load your dataset")
+        st.info("💡 Go to 'Pilih dan Filter Data' tab and load your dataset")
         return
 
     df = st.session_state.current_data.copy()
@@ -1342,30 +1342,30 @@ def main():
     initialize_session_state()
     
     # App header
-    st.markdown('<h1 class="main-header">🏠 Real Estate Market Intelligence Platform</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header">🏠 RHR Market Research Agent</h1>', unsafe_allow_html=True)
     
     # Sidebar navigation
     st.sidebar.title("🧭 Navigation")
     sections = [
-        "🔗 Database Connection",
-        "🎯 Data Selection & Filtering",
-        "💬 Chat with AI",
-        "📊 Dashboard/Playground"
+        "🔗 Koneksi Database",
+        "🎯 Pilih dan Filter Data",
+        "💬 RHR AI",
+        "📊 Dashboard"
     ]
     
     selected_section = st.sidebar.radio("Go to:", sections)
     
     # Render selected section
-    if selected_section == "🔗 Database Connection":
+    if selected_section == "🔗 Koneksi Database":
         render_database_connection()
     
-    elif selected_section == "🎯 Data Selection & Filtering":
+    elif selected_section == "🎯 Pilih dan Filter Data":
         render_data_selection()
     
-    elif selected_section == "💬 Chat with AI":
+    elif selected_section == "💬 RHR AI":
         render_data_chatbot()
     
-    elif selected_section == "📊 Dashboard/Playground":
+    elif selected_section == "📊 Dashboard":
         render_dashboard()
     
     # Sidebar info and status
@@ -1404,7 +1404,7 @@ def main():
     st.sidebar.markdown("**ℹ️ About**")
     st.sidebar.info(
         """
-        **Real Estate Market Intelligence Platform**
+        **RHR Market Research Agent**
         
         🏠 Advanced property analysis with live market data
         🤖 AI-powered insights and predictions  
