@@ -26,9 +26,6 @@ from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 import geovista as gv
 import numpy as np
 import rasterio
-from time import sleep
-from stpyvista.utils import is_the_app_embedded, start_xvfb
-from stpyvista import stpyvista
 
 # import pygwalker as pyg
 from pygwalker.api.streamlit import StreamlitRenderer
@@ -1342,67 +1339,6 @@ def render_dashboard():
     pyg_app = get_pyg_renderer(df, spec_path)
     pyg_app.explorer()
 
-TIFF = {
-    "Min": "assets/tiff/us.tmin_nohads_ll_20231224_float.tif",
-    "Max": "assets/tiff/us.tmax_nohads_ll_20231224_float.tif",
-}
-
-@st.cache_resource(show_spinner=False)
-def get_grid(filename: str):
-    with rasterio.open(filename) as src:
-        band = src.read(1)
-        left, bottom, right, top = src.bounds
-        res = src.res
-        nodata = 0.0
-        x = np.arange(left, right + res[0], res[0])
-        y = np.arange(top, bottom - res[1], -res[1])
-    return gv.Transform.from_1d(
-        x, y, data=np.ma.masked_values(band, nodata), name="Temperature [C]"
-    )
-
-@st.cache_resource(show_spinner=False)
-def stpv_build_geoplotter():
-    plotter = gv.GeoPlotter(shape=[1, 2], off_screen=True)
-    plotter.window_size = [800, 500]
-    plotter.set_background("#0e1117")
-    blobs = [get_grid(t) for t in TIFF.values()]
-    labels = ["🌎 Minimum", "🌎 Maximum"]
-    for i, (lbl, blob) in enumerate(zip(labels, blobs)):
-        plotter.subplot(0, i)
-        plotter.add_base_layer(texture=gv.blue_marble())
-        plotter.add_graticule(mesh_args=dict(color="pink", opacity=0.4))
-        plotter.add_coastlines(color="white", line_width=8, resolution="50m")
-        plotter.view_xz(negative=False)
-        plotter.add_mesh(blob, show_edges=False, style="surface", cmap="coolwarm", clim=[-20,20])
-        plotter.add_text(lbl, position="upper_left", color="w", font_size=16, shadow=True)
-    plotter.link_views()
-    return plotter
-
-def render_earth():
-    """Render the Earth tab using PyVista + GeoVista."""
-    st.markdown('<h2 class="section-header">🌎 EARTH</h2>', unsafe_allow_html=True)
-    if "started_xvfb" not in st.session_state:
-        start_xvfb()
-        st.session_state.started_xvfb = True
-    if "earth_rendered" not in st.session_state:
-        st.session_state.earth_rendered = False
-
-    if not st.session_state.earth_rendered:
-        if st.button("Load Earth Visualization", type="primary"):
-            with st.spinner("Building Earth plot…"):
-                sleep(1)  # give a moment
-                earth_plotter = stpv_build_geoplotter()
-                stpyvista(
-                    earth_plotter,
-                    panel_kwargs=dict(
-                        orientation_widget=True,
-                        interactive_orientation_widget=True,
-                    ),
-                )
-                st.session_state.earth_rendered = True
-    else:
-        st.success("✅ Earth visualization ready!")
-
 def main():
     """Main application function"""
     # Initialize session state
@@ -1416,7 +1352,6 @@ def main():
     sections = [
         "🔗 Database Connection",
         "🎯 Data Selection & Filtering",
-        "🌎 EARTH",
         "💬 Chat with AI",
         "📊 Dashboard/Playground"
     ]
@@ -1429,9 +1364,6 @@ def main():
     
     elif selected_section == "🎯 Data Selection & Filtering":
         render_data_selection()
-    
-    elif selected_section == "🌎 EARTH":
-        render_earth()
     
     elif selected_section == "💬 Chat with AI":
         render_data_chatbot()
