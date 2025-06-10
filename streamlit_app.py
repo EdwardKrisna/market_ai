@@ -1351,7 +1351,7 @@ def main():
         "🔗 Database Connection",
         "🎯 Data Selection & Filtering",
         "💬 Chat with AI",
-        "📊 Dashboard"
+        "📊 Dashboard/Playground"
     ]
     
     selected_section = st.sidebar.radio("Go to:", sections)
