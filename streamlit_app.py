@@ -607,11 +607,12 @@ def render_data_selection():
                     )
 
                     # Initialize filters
-                    filters = {
-                        'wadmpr': [selected_province],
-                        'wadmkk': [selected_regency],
-                        'wadmkc': [selected_district]
-                    }
+                    filters = {}
+                    filters['wadmpr'] = [selected_province]
+                    if selected_regency:  # avoid empty/null/None
+                        filters['wadmkk'] = [selected_regency]
+                    if selected_district:
+                        filters['wadmkc'] = [selected_district]
                     if selected_subdistrict:
                         filters['wadmkd'] = [selected_subdistrict]
 
@@ -635,8 +636,6 @@ def render_data_selection():
                     else:
                         st.error(f"Could not load provinces: {province_msg}")
                         st.stop()
-
-                    filters = {'wadmpr': [selected_province]}
 
                     selected_regency = None
                     selected_district = None
@@ -701,13 +700,15 @@ def render_data_selection():
                             filters['wadmkd'] = [selected_subdistrict]
 
                 # Initialize filters
-                filters = {
-                    'wadmpr': [selected_province],
-                    'wadmkk': [selected_regency],
-                    'wadmkc': [selected_district]
-                }
+                filters = {}
+                filters['wadmpr'] = [selected_province]
+                if selected_regency:  # avoid empty/null/None
+                    filters['wadmkk'] = [selected_regency]
+                if selected_district:
+                    filters['wadmkc'] = [selected_district]
                 if selected_subdistrict:
                     filters['wadmkd'] = [selected_subdistrict]
+
 
                 # Now, you can safely continue with other steps, as district is guaranteed selected
                 st.success("All required region filters selected! Continue to next steps.")
