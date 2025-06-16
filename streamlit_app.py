@@ -332,7 +332,7 @@ def render_database_connection():
         db_name = st.secrets["database"]["name"]
         schema = st.secrets["database"]["schema"]
         
-        st.success("✅ Database configuration loaded from secrets")
+        # st.success("✅ Database configuration loaded from secrets")
         
         # Auto-connect if not already connected
         if not st.session_state.db_connection.connection_status:
@@ -509,53 +509,137 @@ def render_data_selection():
                 st.info(f"📊 {len(selected_columns)} of {len(available_columns)} Land Market columns selected")
                 
             else:
-                # For other tables, show all columns with all selected by default
-                selected_columns = st.multiselect(
-                    "Select columns for analysis (remove unwanted ones):",
-                    available_columns,
-                    default=available_columns,  # All columns selected by default
-                    help="All columns are selected by default. Remove the ones you don't need for your analysis."
-                )
+                # Then continue with the flexible filter UI below as you currently have it
+                st.markdown("Apply filters to focus on specific data subsets (you can apply multiple filters):")
                 
-                # Show column count and quick info
-                col1, col2 = st.columns(2)
-                with col1:
-                    st.info(f"📊 {len(selected_columns)} of {len(available_columns)} columns selected")
-                with col2:
-                    if len(selected_columns) != len(available_columns):
-                        removed_count = len(available_columns) - len(selected_columns)
-                        st.info(f"🗑️ {removed_count} columns removed")
-                    else:
-                        st.info("✅ All columns included")
             
-            # Data filtering section
             if selected_columns:
                 st.markdown('<div class="filter-section">', unsafe_allow_html=True)
                 st.markdown("### 🔍 **Data Filtering**")
-                
-                # --- Cascading Region Filters for Land Market, same blocking logic style ---
 
                 db = st.session_state.db_connection
                 schema = st.session_state.get('schema', 'public')
                 table = st.session_state.selected_table
 
-                # Province
-                st.markdown("#### 🎯 **Required: Select Province/Region**")
-                with st.spinner("Loading province options..."):
-                    province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
+                if table == 'engineered_property_data':
+                    # Full cascading filters for Land Market
+                    # Province
+                    st.markdown("#### 🎯 **Required: Select Province/Region**")
+                    with st.spinner("Loading province options..."):
+                        province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
 
-                if province_values:
-                    selected_province = st.selectbox(
-                        "Choose a Province/Region:",
-                        [""] + province_values,
-                        help="You must select a province/region to continue"
-                    )
-                    if not selected_province:
-                        st.error("❌ Please select a province/region to continue")
+                    if province_values:
+                        selected_province = st.selectbox(
+                            "Choose a Province/Region:",
+                            [""] + province_values,
+                            help="You must select a province/region to continue"
+                        )
+                        if not selected_province:
+                            st.error("❌ Please select a province/region to continue")
+                            st.stop()
+                    else:
+                        st.error(f"Could not load provinces: {province_msg}")
                         st.stop()
+
+                    # Regency/City
+                    st.markdown("#### 🎯 **Required: Select Regency/City**")
+                    with st.spinner("Loading regency/city options..."):
+                        regency_query = f'''
+                            SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
+                            WHERE wadmpr = '{selected_province}'
+                            ORDER BY wadmkk
+                        '''
+                        regency_df, _ = db.execute_query(regency_query)
+                        regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
+
+                    if regency_values:
+                        selected_regency = st.selectbox(
+                            "Choose a Regency/City:",
+                            [""] + regency_values,
+                            help="You must select a regency/city to continue"
+                        )
+                        if not selected_regency:
+                            st.error("❌ Please select a regency/city to continue")
+                            st.stop()
+                    else:
+                        st.error("No regency/city found for the selected province.")
+                        st.stop()
+
+                    # District
+                    st.markdown("#### 🎯 **Required: Select District**")
+                    with st.spinner("Loading district options..."):
+                        district_query = f'''
+                            SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
+                            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
+                            ORDER BY wadmkc
+                        '''
+                        district_df, _ = db.execute_query(district_query)
+                        district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
+
+                    if district_values:
+                        selected_district = st.selectbox(
+                            "Choose a District:",
+                            [""] + district_values,
+                            help="You must select a district to continue"
+                        )
+                        if not selected_district:
+                            st.error("❌ Please select a district to continue")
+                            st.stop()
+                    else:
+                        st.error("No district found for the selected regency/city.")
+                        st.stop()
+
+                    # Subdistrict (optional)
+                    st.markdown("#### Optional: Select Subdistrict")
+                    with st.spinner("Loading subdistrict options..."):
+                        subdistrict_query = f'''
+                            SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
+                            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
+                            ORDER BY wadmkd
+                        '''
+                        subdistrict_df, _ = db.execute_query(subdistrict_query)
+                        subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
+
+                    selected_subdistrict = st.selectbox(
+                        "Choose a Subdistrict (optional):",
+                        [""] + subdistrict_values
+                    )
+
+                    # Initialize filters
+                    filters = {
+                        'wadmpr': [selected_province],
+                        'wadmkk': [selected_regency],
+                        'wadmkc': [selected_district]
+                    }
+                    if selected_subdistrict:
+                        filters['wadmkd'] = [selected_subdistrict]
+
+                    st.success("All required region filters selected! Continue to next steps.")
+
                 else:
-                    st.error(f"Could not load provinces: {province_msg}")
-                    st.stop()
+                    # For other tables: only require province
+                    st.markdown("#### 🎯 **Required: Select Province/Region**")
+                    with st.spinner("Loading province options..."):
+                        province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
+
+                    if province_values:
+                        selected_province = st.selectbox(
+                            "Choose a Province/Region:",
+                            [""] + province_values,
+                            help="You must select a province/region to continue"
+                        )
+                        if not selected_province:
+                            st.error("❌ Please select a province/region to continue")
+                            st.stop()
+                    else:
+                        st.error(f"Could not load provinces: {province_msg}")
+                        st.stop()
+
+                    filters = {'wadmpr': [selected_province]}
+
+                # Continue with flexible filters and buttons (Add Filter, Get Data, etc.)
+                ...
+
 
                 # Regency/City
                 st.markdown("#### 🎯 **Required: Select Regency/City**")
