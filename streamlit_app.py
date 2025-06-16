@@ -638,6 +638,8 @@ def render_data_selection():
 
                     filters = {'wadmpr': [selected_province]}
 
+                    selected_subdistrict = None
+
                     # Regency/City (optional)
                     st.markdown("#### Optional: Select Regency/City")
                     with st.spinner("Loading regency/city options..."):
