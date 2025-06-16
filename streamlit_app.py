@@ -638,6 +638,8 @@ def render_data_selection():
 
                     filters = {'wadmpr': [selected_province]}
 
+                    selected_regency = None
+                    selected_district = None
                     selected_subdistrict = None
 
                     # Regency/City (optional)
