@@ -618,7 +618,7 @@ def render_data_selection():
                     st.success("All required region filters selected! Continue to next steps.")
 
                 else:
-                    # For other tables: only require province
+                    # For other tables: only require province, others are optional
                     st.markdown("#### 🎯 **Required: Select Province/Region**")
                     with st.spinner("Loading province options..."):
                         province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
@@ -638,73 +638,63 @@ def render_data_selection():
 
                     filters = {'wadmpr': [selected_province]}
 
-                # Continue with flexible filters and buttons (Add Filter, Get Data, etc.)
-                ...
+                    # Regency/City (optional)
+                    st.markdown("#### Optional: Select Regency/City")
+                    with st.spinner("Loading regency/city options..."):
+                        regency_query = f'''
+                            SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
+                            WHERE wadmpr = '{selected_province}'
+                            ORDER BY wadmkk
+                        '''
+                        regency_df, _ = db.execute_query(regency_query)
+                        regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
 
-
-                # Regency/City
-                st.markdown("#### 🎯 **Required: Select Regency/City**")
-                with st.spinner("Loading regency/city options..."):
-                    regency_query = f'''
-                        SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
-                        WHERE wadmpr = '{selected_province}'
-                        ORDER BY wadmkk
-                    '''
-                    regency_df, _ = db.execute_query(regency_query)
-                    regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
-
-                if regency_values:
                     selected_regency = st.selectbox(
-                        "Choose a Regency/City:",
-                        [""] + regency_values,
-                        help="You must select a regency/city to continue"
+                        "Choose a Regency/City (optional):",
+                        [""] + regency_values
                     )
-                    if not selected_regency:
-                        st.error("❌ Please select a regency/city to continue")
-                        st.stop()
-                else:
-                    st.error("No regency/city found for the selected province.")
-                    st.stop()
+                    if selected_regency:
+                        filters['wadmkk'] = [selected_regency]
 
-                # District
-                st.markdown("#### 🎯 **Required: Select District**")
-                with st.spinner("Loading district options..."):
-                    district_query = f'''
-                        SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
-                        WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
-                        ORDER BY wadmkc
-                    '''
-                    district_df, _ = db.execute_query(district_query)
-                    district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
+                    # District (optional, only if regency is selected)
+                    if selected_regency:
+                        st.markdown("#### Optional: Select District")
+                        with st.spinner("Loading district options..."):
+                            district_query = f'''
+                                SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
+                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
+                                ORDER BY wadmkc
+                            '''
+                            district_df, _ = db.execute_query(district_query)
+                            district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
 
-                if district_values:
-                    selected_district = st.selectbox(
-                        "Choose a District:",
-                        [""] + district_values,
-                        help="You must select a district to continue"
-                    )
-                    if not selected_district:
-                        st.error("❌ Please select a district to continue")
-                        st.stop()
-                else:
-                    st.error("No district found for the selected regency/city.")
-                    st.stop()
+                        selected_district = st.selectbox(
+                            "Choose a District (optional):",
+                            [""] + district_values
+                        )
+                        if selected_district:
+                            filters['wadmkc'] = [selected_district]
+                    else:
+                        selected_district = None  # to be used in subdistrict query below
 
-                # Subdistrict (optional)
-                st.markdown("#### Optional: Select Subdistrict")
-                with st.spinner("Loading subdistrict options..."):
-                    subdistrict_query = f'''
-                        SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
-                        WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
-                        ORDER BY wadmkd
-                    '''
-                    subdistrict_df, _ = db.execute_query(subdistrict_query)
-                    subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
+                    # Subdistrict (optional, only if district is selected)
+                    if selected_district:
+                        st.markdown("#### Optional: Select Subdistrict")
+                        with st.spinner("Loading subdistrict options..."):
+                            subdistrict_query = f'''
+                                SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
+                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
+                                ORDER BY wadmkd
+                            '''
+                            subdistrict_df, _ = db.execute_query(subdistrict_query)
+                            subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
 
-                selected_subdistrict = st.selectbox(
-                    "Choose a Subdistrict (optional):",
-                    [""] + subdistrict_values
-                )
+                        selected_subdistrict = st.selectbox(
+                            "Choose a Subdistrict (optional):",
+                            [""] + subdistrict_values
+                        )
+                        if selected_subdistrict:
+                            filters['wadmkd'] = [selected_subdistrict]
 
                 # Initialize filters
                 filters = {
