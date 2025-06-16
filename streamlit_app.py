@@ -509,6 +509,7 @@ def render_data_selection():
                 st.info(f"📊 {len(selected_columns)} of {len(available_columns)} Land Market columns selected")
                 
             else:
+                selected_columns = available_columns
                 # Then continue with the flexible filter UI below as you currently have it
                 st.markdown("Apply filters to focus on specific data subsets (you can apply multiple filters):")
                 
