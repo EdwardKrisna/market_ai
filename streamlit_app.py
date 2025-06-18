@@ -656,8 +656,8 @@ def render_data_selection():
                         "Choose a Regency/City (optional):",
                         [""] + regency_values
                     )
-                    if selected_regency:
-                        filters['wadmkk'] = [selected_regency]
+                    # if selected_regency:
+                    #     filters['wadmkk'] = [selected_regency]
 
                     # District (optional, only if regency is selected)
                     if selected_regency:
