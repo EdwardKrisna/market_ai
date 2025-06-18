@@ -491,23 +491,26 @@ def render_data_selection():
             st.markdown("### 📊 **Column Selection**")
             
             available_columns = st.session_state.table_columns['column_name'].tolist()
-            
-            # Special handling for Land Market (engineered_property_data)
+
             if st.session_state.selected_table == 'engineered_property_data':
-                # For Land Market, only show specific columns
-                land_columns = ['wadmpr','wadmkk','wadmkc','wadmkd','tahun_pengambilan_data','luas_tanah','kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
-                available_columns = [col for col in land_columns if col in available_columns]
-                
-                selected_columns = st.multiselect(
-                    "Select columns for Land Market analysis (remove unwanted ones):",
-                    available_columns,
-                    default=available_columns,  # All Land Market columns selected by default
-                    help="All required Land Market columns are selected. Remove any you don't need for analysis."
+                mandatory_cols = ['luas_tanah', 'hpm', 'longitude', 'latitude']
+                user_selectable_cols = [col for col in available_columns if col not in mandatory_cols]
+
+                selected_user_cols = st.multiselect(
+                    "Select up to 6 columns for Land Market analysis:",
+                    user_selectable_cols,
+                    default=user_selectable_cols,
+                    help="Mandatory columns luas_tanah, hpm, longitude, latitude are always included.",
+                    max_selections=6  # if Streamlit version supports this
                 )
-                
-                # Show column count
-                st.info(f"📊 {len(selected_columns)} of {len(available_columns)} Land Market columns selected")
-                
+
+                if len(selected_user_cols) > 6:
+                    st.warning("⚠️ You can select a maximum of 6 columns only. Please deselect extra columns.")
+
+                selected_columns = mandatory_cols + selected_user_cols
+
+                st.info(f"📊 {len(selected_columns)} columns selected (4 mandatory + {len(selected_user_cols)} user-selected)")
+   
             else:
                 selected_columns = available_columns
                 # Then continue with the flexible filter UI below as you currently have it
