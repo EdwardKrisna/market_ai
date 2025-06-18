@@ -499,7 +499,7 @@ def render_data_selection():
                 selected_user_cols = st.multiselect(
                     "Select up to 6 columns for Land Market analysis:",
                     user_selectable_cols,
-                    default=user_selectable_cols,
+                    default=[],
                     help="Mandatory columns luas_tanah, hpm, longitude, latitude are always included."
                 )
 
