@@ -500,13 +500,12 @@ def render_data_selection():
                     "Select up to 6 columns for Land Market analysis:",
                     user_selectable_cols,
                     default=user_selectable_cols,
-                    help="Mandatory columns luas_tanah, hpm, longitude, latitude are always included.",
-                    max_selections=6  # if Streamlit version supports this
+                    help="Mandatory columns luas_tanah, hpm, longitude, latitude are always included."
                 )
 
                 if len(selected_user_cols) > 6:
                     st.warning("⚠️ You can select a maximum of 6 columns only. Please deselect extra columns.")
-
+                    
                 selected_columns = mandatory_cols + selected_user_cols
 
                 st.info(f"📊 {len(selected_columns)} columns selected (4 mandatory + {len(selected_user_cols)} user-selected)")
