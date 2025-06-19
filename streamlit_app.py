@@ -895,97 +895,97 @@ def render_data_selection():
                 # Get Data button
                 st.markdown("### 🚀 **Load Data**")
                 
-                col1, col2, col3 = st.columns([2, 1, 1])
+                # col1, col2, col3 = st.columns([2, 1, 1])
                 
-                with col1:
-                    if st.button("🎯 Get Data", type="primary", use_container_width=True):
-                        # Build the SQL query
-                        schema = st.session_state.get('schema', 'public')
-                        
-                        # Build SELECT clause
-                        select_columns = ', '.join([f'"{col}"' for col in selected_columns])
-                        query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
-                        
-                        # Build WHERE clause
-                        where_conditions = []
-                        
-                        for col, filter_val in filters.items():
-                            if isinstance(filter_val, list):  # Categorical filter
-                                if filter_val:  # Only add condition if values are selected
-                                    values_str = "', '".join([str(v) for v in filter_val])
-                                    where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                            
-                            elif isinstance(filter_val, dict):
-                                if filter_val.get('type') == 'range':
-                                    where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                                elif filter_val.get('type') == 'text':
-                                    where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
-                        
-                        if where_conditions:
-                            query += ' WHERE ' + ' AND '.join(where_conditions)
-                        
-                        # Add limit for performance
-                        query += ' LIMIT 100000'
-                        
-                        # Execute query
-                        with st.spinner("Loading data..."):
-                            result_df, message = st.session_state.db_connection.execute_query(query)
-                        
-                        if result_df is not None:
-                            st.session_state.current_data = result_df
-                            st.session_state.applied_filters = filters
-                            
-                            st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
-                            
-                            # Show data preview
-                            st.markdown("**Data Preview:**")
-                            st.dataframe(result_df.head(10), use_container_width=True)
-                            
-                            # Show summary statistics
-                            col1, col2, col3, col4 = st.columns(4)
-                            with col1:
-                                st.metric("Total Rows", f"{len(result_df):,}")
-                            with col2:
-                                st.metric("Total Columns", len(result_df.columns))
-                            with col3:
-                                numeric_cols = len(result_df.select_dtypes(include=[np.number]).columns)
-                                st.metric("Numeric Columns", numeric_cols)
-                            with col4:
-                                missing_pct = (result_df.isnull().sum().sum() / (result_df.shape[0] * result_df.shape[1]) * 100)
-                                st.metric("Data Completeness", f"{100-missing_pct:.1f}%")
-                        
-                        else:
-                            st.error(f"Failed to load data: {message}")
-                
-                with col2:
-                    st.write("")
-                    if st.button("🔄 Reset Filters", use_container_width=True):
-                        st.session_state.applied_filters = {}
-                        st.rerun()
-                
-                with col3:
-                    st.write("")
-                    if st.button("📊 Show Query", use_container_width=True):
-                        # Show the generated query
-                        schema = st.session_state.get('schema', 'public')
-                        select_columns = ', '.join([f'"{col}"' for col in selected_columns])
-                        query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
-                        
-                        where_conditions = []
-                        for col, filter_val in filters.items():
-                            if isinstance(filter_val, list) and filter_val:
+                # with col1:
+                if st.button("🎯 Get Data", type="primary", use_container_width=True):
+                    # Build the SQL query
+                    schema = st.session_state.get('schema', 'public')
+                    
+                    # Build SELECT clause
+                    select_columns = ', '.join([f'"{col}"' for col in selected_columns])
+                    query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
+                    
+                    # Build WHERE clause
+                    where_conditions = []
+                    
+                    for col, filter_val in filters.items():
+                        if isinstance(filter_val, list):  # Categorical filter
+                            if filter_val:  # Only add condition if values are selected
                                 values_str = "', '".join([str(v) for v in filter_val])
                                 where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                            elif isinstance(filter_val, dict):
-                                if filter_val.get('type') == 'range':
-                                    where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                                elif filter_val.get('type') == 'text':
-                                    where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
                         
-                        if where_conditions:
-                            query += ' WHERE ' + ' AND '.join(where_conditions)
+                        elif isinstance(filter_val, dict):
+                            if filter_val.get('type') == 'range':
+                                where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
+                            elif filter_val.get('type') == 'text':
+                                where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
+                    
+                    if where_conditions:
+                        query += ' WHERE ' + ' AND '.join(where_conditions)
+                    
+                    # Add limit for performance
+                    query += ' LIMIT 100000'
+                    
+                    # Execute query
+                    with st.spinner("Loading data..."):
+                        result_df, message = st.session_state.db_connection.execute_query(query)
+                    
+                    if result_df is not None:
+                        st.session_state.current_data = result_df
+                        st.session_state.applied_filters = filters
                         
-                        st.code(query, language="sql")
+                        st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
+                        
+                        # Show data preview
+                        st.markdown("**Data Preview:**")
+                        st.dataframe(result_df.head(10), use_container_width=True)
+                        
+                        # Show summary statistics
+                        col1, col2, col3, col4 = st.columns(4)
+                        with col1:
+                            st.metric("Total Rows", f"{len(result_df):,}")
+                        with col2:
+                            st.metric("Total Columns", len(result_df.columns))
+                        with col3:
+                            numeric_cols = len(result_df.select_dtypes(include=[np.number]).columns)
+                            st.metric("Numeric Columns", numeric_cols)
+                        with col4:
+                            missing_pct = (result_df.isnull().sum().sum() / (result_df.shape[0] * result_df.shape[1]) * 100)
+                            st.metric("Data Completeness", f"{100-missing_pct:.1f}%")
+                    
+                    else:
+                        st.error(f"Failed to load data: {message}")
+                
+                # with col2:
+                st.write("")
+                if st.button("🔄 Reset Filters", use_container_width=True):
+                    st.session_state.applied_filters = {}
+                    st.rerun()
+                
+                # with col3:
+                st.write("")
+                if st.button("📊 Show Query", use_container_width=True):
+                    # Show the generated query
+                    schema = st.session_state.get('schema', 'public')
+                    select_columns = ', '.join([f'"{col}"' for col in selected_columns])
+                    query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
+                    
+                    where_conditions = []
+                    for col, filter_val in filters.items():
+                        if isinstance(filter_val, list) and filter_val:
+                            values_str = "', '".join([str(v) for v in filter_val])
+                            where_conditions.append(f'"{col}" IN (\'{values_str}\')')
+                        elif isinstance(filter_val, dict):
+                            if filter_val.get('type') == 'range':
+                                where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
+                            elif filter_val.get('type') == 'text':
+                                where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
+                    
+                    if where_conditions:
+                        query += ' WHERE ' + ' AND '.join(where_conditions)
+                    
+                    st.code(query, language="sql")
                 
                 # Show applied filters summary
                 if filters:
