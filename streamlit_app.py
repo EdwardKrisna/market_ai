@@ -187,7 +187,7 @@ class DataChatbot:
             model="gpt-4.1-mini",
             api_key=api_key,
             temperature=0.3,
-            max_tokens=1000,
+            max_tokens=2000,
             streaming=True
         )
     
