@@ -1424,7 +1424,16 @@ def main():
     initialize_session_state()
     
     # App header
-    st.markdown('<h1 class="main-header">🏠 RHR Market Research Agent</h1>', unsafe_allow_html=True)
+    st.markdown('<h1 class="main-header"> RHR Market Research Agent</h1>', unsafe_allow_html=True)
+    
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("""
+        <h1 style="display: flex; align-items: center;">
+            <img src="https://kjpp.rhr.co.id/wp-content/uploads/2020/12/LOGO_KJPP_RHR_1_resize.png" 
+                alt="Logo" style="height:48px; margin-right: 20px;">
+            <span style="font-weight: bold; font-size: 1.5rem;"></span>
+        </h1>
+        """, unsafe_allow_html=True)
     
     # Sidebar navigation
     st.sidebar.title("🧭 Navigation")
@@ -1577,14 +1586,14 @@ def main():
         )
     
     # Footer
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("""
-        <h1 style="display: flex; align-items: center;">
-            <img src="https://kjpp.rhr.co.id/wp-content/uploads/2020/12/LOGO_KJPP_RHR_1_resize.png" 
-                alt="Logo" style="height:48px; margin-right: 20px;">
-            <span style="font-weight: bold; font-size: 1.5rem;"></span>
-        </h1>
-        """, unsafe_allow_html=True)
+    # st.sidebar.markdown("---")
+    # st.sidebar.markdown("""
+    #     <h1 style="display: flex; align-items: center;">
+    #         <img src="https://kjpp.rhr.co.id/wp-content/uploads/2020/12/LOGO_KJPP_RHR_1_resize.png" 
+    #             alt="Logo" style="height:48px; margin-right: 20px;">
+    #         <span style="font-weight: bold; font-size: 1.5rem;"></span>
+    #     </h1>
+    #     """, unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
