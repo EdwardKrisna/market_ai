@@ -1190,14 +1190,14 @@ def render_data_chatbot():
                     
                     st.plotly_chart(fig, use_container_width=True)
                     
-                    # Map statistics
-                    col1, col2, col3 = st.columns(3)
-                    with col1:
-                        st.metric("Properties Mapped", len(map_df))
-                    with col2:
-                        st.metric("Center Latitude", f"{center_lat:.4f}")
-                    with col3:
-                        st.metric("Center Longitude", f"{center_lon:.4f}")
+                    # # Map statistics
+                    # col1, col2, col3 = st.columns(3)
+                    # with col1:
+                    #     st.metric("Properties Mapped", len(map_df))
+                    # with col2:
+                    #     st.metric("Center Latitude", f"{center_lat:.4f}")
+                    # with col3:
+                    #     st.metric("Center Longitude", f"{center_lon:.4f}")
                 else:
                     st.info("No valid coordinates found for mapping")
             else:
