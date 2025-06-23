@@ -564,31 +564,27 @@ def render_data_selection():
                 # Display map
                 st.components.v1.html(map_html, height=500)
                 
-                # Initialize coordinates in session state
-                if 'map_lat' not in st.session_state:
-                    st.session_state.map_lat = 0.0
-                if 'map_lon' not in st.session_state:
-                    st.session_state.map_lon = 0.0
-                
                 # Coordinate inputs and validation
                 col1, col2, col3 = st.columns([2, 2, 1])
                 
                 with col1:
                     map_lat = st.number_input(
                         "Selected Latitude:", 
-                        value=st.session_state.map_lat,
+                        value=0.0,
                         step=0.000001,
                         format="%.6f",
-                        key="map_lat_input"
+                        key="map_lat_input",
+                        help="Click on map or enter manually"
                     )
                 
                 with col2:
                     map_lon = st.number_input(
                         "Selected Longitude:", 
-                        value=st.session_state.map_lon,
+                        value=0.0,
                         step=0.000001,
                         format="%.6f", 
-                        key="map_lon_input"
+                        key="map_lon_input",
+                        help="Click on map or enter manually"
                     )
                 
                 with col3:
@@ -637,7 +633,17 @@ def render_data_selection():
                             except Exception as e:
                                 st.error(f"❌ Error: {str(e)}")
                         else:
-                            st.warning("⚠️ Please click on the map first.")
+                            st.warning("⚠️ Please enter coordinates manually or use the format: Latitude: -6.200000, Longitude: 106.816666")
+                
+                # Instructions for manual input
+                st.info("💡 **How to use:** Click on the map to see coordinates, then manually copy them to the input fields above, or enter coordinates directly.")
+                
+                # Show example coordinates
+                with st.expander("📍 Example Coordinates"):
+                    st.write("**Jakarta:** Latitude: -6.200000, Longitude: 106.816666")
+                    st.write("**Surabaya:** Latitude: -7.250445, Longitude: 112.768845") 
+                    st.write("**Bandung:** Latitude: -6.917464, Longitude: 107.619125")
+                    st.write("**Medan:** Latitude: 3.595196, Longitude: 98.672226")
                 
                 # Show optional filters if location is validated
                 if 'location_search' in filters:
@@ -792,18 +798,9 @@ def render_data_selection():
             if st.button("📊 Show Query", use_container_width=True):
                 st.info("Query will be shown here when Get Data is clicked")
 
-    # JavaScript to handle map clicks and update input fields
-    st.markdown("""
-    <script>
-    window.addEventListener('message', function(event) {
-        if (event.data.type === 'mapClick') {
-            // Update session state via a hidden form submission or other method
-            console.log('Map clicked:', event.data.lat, event.data.lon);
-        }
-    });
-    </script>
-    """, unsafe_allow_html=True)
-    
+    # Remove the JavaScript section at the bottom as it's not working properly
+    pass
+
 def render_data_chatbot():
     """Render Data Chatbot section"""
     st.markdown('<div class="section-header">💬 RHR AI</div>', unsafe_allow_html=True)
