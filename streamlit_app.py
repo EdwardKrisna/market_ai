@@ -1112,323 +1112,323 @@ def render_data_selection():
 
                 st.markdown('</div>', unsafe_allow_html=True)
                 
-                # Get Data button
-                st.markdown("### 🚀 **Load Data**")
+                # # Get Data button
+                # st.markdown("### 🚀 **Load Data**")
                 
-                if st.button("🎯 Get Data", type="primary", use_container_width=True, key="get_data_main_button"):
-                    # Build the SQL query
-                    schema = st.session_state.get('schema', 'public')
+                # if st.button("🎯 Get Data", type="primary", use_container_width=True, key="get_data_main_button"):
+                #     # Build the SQL query
+                #     schema = st.session_state.get('schema', 'public')
                     
-                    # Special handling for Land Market map-based filtering
-                    if table == 'engineered_property_data' and 'location_search' in filters:
-                        # Map-based distance query
-                        location_info = filters['location_search']
-                        user_lat = location_info['lat']
-                        user_lon = location_info['lon']
-                        user_regency = location_info['regency']
+                #     # Special handling for Land Market map-based filtering
+                #     if table == 'engineered_property_data' and 'location_search' in filters:
+                #         # Map-based distance query
+                #         location_info = filters['location_search']
+                #         user_lat = location_info['lat']
+                #         user_lon = location_info['lon']
+                #         user_regency = location_info['regency']
                         
-                        # Build SELECT clause with distance calculation
-                        select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
+                #         # Build SELECT clause with distance calculation
+                #         select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
                         
-                        query = f"""
-                        SELECT {select_columns_str},
-                               ST_Distance(
-                                   ST_Point(CAST("longitude" AS FLOAT), CAST("latitude" AS FLOAT)),
-                                   ST_Point({user_lon}, {user_lat})
-                               ) as distance_meters
-                        FROM "{schema}"."{table}"
-                        WHERE "latitude" IS NOT NULL 
-                        AND "longitude" IS NOT NULL
-                        AND "wadmkk" = '{user_regency}'
-                        """
+                #         query = f"""
+                #         SELECT {select_columns_str},
+                #                ST_Distance(
+                #                    ST_Point(CAST("longitude" AS FLOAT), CAST("latitude" AS FLOAT)),
+                #                    ST_Point({user_lon}, {user_lat})
+                #                ) as distance_meters
+                #         FROM "{schema}"."{table}"
+                #         WHERE "latitude" IS NOT NULL 
+                #         AND "longitude" IS NOT NULL
+                #         AND "wadmkk" = '{user_regency}'
+                #         """
                         
-                        # Add optional filters for map-based search
-                        if 'kondisi_wilayah_sekitar' in filters:
-                            kondisi_values = "', '".join(filters['kondisi_wilayah_sekitar'])
-                            query += f" AND \"kondisi_wilayah_sekitar\" IN ('{kondisi_values}')"
+                #         # Add optional filters for map-based search
+                #         if 'kondisi_wilayah_sekitar' in filters:
+                #             kondisi_values = "', '".join(filters['kondisi_wilayah_sekitar'])
+                #             query += f" AND \"kondisi_wilayah_sekitar\" IN ('{kondisi_values}')"
                         
-                        if 'luas_tanah' in filters and filters['luas_tanah'].get('type') == 'range':
-                            luas_filter = filters['luas_tanah']
-                            query += f" AND CAST(\"luas_tanah\" AS FLOAT) BETWEEN {luas_filter['min']} AND {luas_filter['max']}"
+                #         if 'luas_tanah' in filters and filters['luas_tanah'].get('type') == 'range':
+                #             luas_filter = filters['luas_tanah']
+                #             query += f" AND CAST(\"luas_tanah\" AS FLOAT) BETWEEN {luas_filter['min']} AND {luas_filter['max']}"
                         
-                        if 'hpm' in filters and filters['hpm'].get('type') == 'range':
-                            hpm_filter = filters['hpm']
-                            query += f" AND CAST(\"hpm\" AS FLOAT) BETWEEN {hmp_filter['min']} AND {hpm_filter['max']}"
+                #         if 'hpm' in filters and filters['hpm'].get('type') == 'range':
+                #             hpm_filter = filters['hpm']
+                #             query += f" AND CAST(\"hpm\" AS FLOAT) BETWEEN {hmp_filter['min']} AND {hpm_filter['max']}"
                         
-                        # Order by distance and limit to 300 nearest
-                        query += " ORDER BY distance_meters ASC LIMIT 300"
+                #         # Order by distance and limit to 300 nearest
+                #         query += " ORDER BY distance_meters ASC LIMIT 300"
                     
-                    else:
-                        # Standard query for other filtering methods
-                        # Build SELECT clause
-                        select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
-                        query = f'SELECT {select_columns_str} FROM "{schema}"."{table}"'
+                #     else:
+                #         # Standard query for other filtering methods
+                #         # Build SELECT clause
+                #         select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
+                #         query = f'SELECT {select_columns_str} FROM "{schema}"."{table}"'
                         
-                        # Build WHERE clause
-                        where_conditions = []
+                #         # Build WHERE clause
+                #         where_conditions = []
                         
-                        for col, filter_val in filters.items():
-                            if col == 'location_search':  # Skip location_search for standard queries
-                                continue
+                #         for col, filter_val in filters.items():
+                #             if col == 'location_search':  # Skip location_search for standard queries
+                #                 continue
                                 
-                            if isinstance(filter_val, list):  # Categorical filter
-                                if filter_val:  # Only add condition if values are selected
-                                    values_str = "', '".join([str(v) for v in filter_val])
-                                    where_conditions.append(f'"{col}" IN (\'{values_str}\')')
+                #             if isinstance(filter_val, list):  # Categorical filter
+                #                 if filter_val:  # Only add condition if values are selected
+                #                     values_str = "', '".join([str(v) for v in filter_val])
+                #                     where_conditions.append(f'"{col}" IN (\'{values_str}\')')
                             
-                            elif isinstance(filter_val, dict):
-                                if filter_val.get('type') == 'range':
-                                    where_conditions.append(f'CAST("{col}" AS FLOAT) BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                                elif filter_val.get('type') == 'text':
-                                    where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
+                #             elif isinstance(filter_val, dict):
+                #                 if filter_val.get('type') == 'range':
+                #                     where_conditions.append(f'CAST("{col}" AS FLOAT) BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
+                #                 elif filter_val.get('type') == 'text':
+                #                     where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
                         
-                        if where_conditions:
-                            query += ' WHERE ' + ' AND '.join(where_conditions)
+                #         if where_conditions:
+                #             query += ' WHERE ' + ' AND '.join(where_conditions)
                         
-                        # Add limit for performance (except for distance-based queries)
-                        query += ' LIMIT 100000'
+                #         # Add limit for performance (except for distance-based queries)
+                #         query += ' LIMIT 100000'
                     
-                    # Execute query
-                    with st.spinner("Loading data..."):
-                        result_df, message = st.session_state.db_connection.execute_query(query)
+                #     # Execute query
+                #     with st.spinner("Loading data..."):
+                #         result_df, message = st.session_state.db_connection.execute_query(query)
                     
-                    if result_df is not None:
-                        st.session_state.current_data = result_df
-                        st.session_state.applied_filters = filters
+                #     if result_df is not None:
+                #         st.session_state.current_data = result_df
+                #         st.session_state.applied_filters = filters
                         
-                        # Special message for distance-based results
-                        if table == 'engineered_property_data' and 'location_search' in filters:
-                            st.success(f"✅ Found {len(result_df):,} nearest properties within {user_regency}!")
-                            if 'distance_meters' in result_df.columns:
-                                min_dist = result_df['distance_meters'].min()
-                                max_dist = result_df['distance_meters'].max()
-                                avg_dist = result_df['distance_meters'].mean()
-                                st.info(f"📏 Distance range: {min_dist:.0f}m - {max_dist:.0f}m (avg: {avg_dist:.0f}m)")
-                        else:
-                            st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
+                #         # Special message for distance-based results
+                #         if table == 'engineered_property_data' and 'location_search' in filters:
+                #             st.success(f"✅ Found {len(result_df):,} nearest properties within {user_regency}!")
+                #             if 'distance_meters' in result_df.columns:
+                #                 min_dist = result_df['distance_meters'].min()
+                #                 max_dist = result_df['distance_meters'].max()
+                #                 avg_dist = result_df['distance_meters'].mean()
+                #                 st.info(f"📏 Distance range: {min_dist:.0f}m - {max_dist:.0f}m (avg: {avg_dist:.0f}m)")
+                #         else:
+                #             st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
                         
-                        # Show data preview
-                        st.markdown("**Data Preview:**")
-                        st.dataframe(result_df.head(10), use_container_width=True)
+                #         # Show data preview
+                #         st.markdown("**Data Preview:**")
+                #         st.dataframe(result_df.head(10), use_container_width=True)
                         
-                        # Show summary statistics
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Total Rows", f"{len(result_df):,}")
-                        with col2:
-                            st.metric("Total Columns", len(result_df.columns))
-                        with col3:
-                            numeric_cols = len(result_df.select_dtypes(include=[np.number]).columns)
-                            st.metric("Numeric Columns", numeric_cols)
-                        with col4:
-                            missing_pct = (result_df.isnull().sum().sum() / (result_df.shape[0] * result_df.shape[1]) * 100)
-                            st.metric("Data Completeness", f"{100-missing_pct:.1f}%")
+                #         # Show summary statistics
+                #         col1, col2, col3, col4 = st.columns(4)
+                #         with col1:
+                #             st.metric("Total Rows", f"{len(result_df):,}")
+                #         with col2:
+                #             st.metric("Total Columns", len(result_df.columns))
+                #         with col3:
+                #             numeric_cols = len(result_df.select_dtypes(include=[np.number]).columns)
+                #             st.metric("Numeric Columns", numeric_cols)
+                #         with col4:
+                #             missing_pct = (result_df.isnull().sum().sum() / (result_df.shape[0] * result_df.shape[1]) * 100)
+                #             st.metric("Data Completeness", f"{100-missing_pct:.1f}%")
                     
-                    else:
-                        st.error(f"Failed to load data: {message}")
+                #     else:
+                #         st.error(f"Failed to load data: {message}")
                 
-                # Reset and Show Query buttons
-                col1, col2 = st.columns(2)
+                # # Reset and Show Query buttons
+                # col1, col2 = st.columns(2)
                 
-                with col1:
-                    if st.button("🔄 Reset Filters", use_container_width=True, key="reset_filters_main"):
-                        st.session_state.applied_filters = {}
-                        if 'selected_coordinates' in st.session_state:
-                            del st.session_state.selected_coordinates
-                        st.rerun()
+                # with col1:
+                #     if st.button("🔄 Reset Filters", use_container_width=True, key="reset_filters_main"):
+                #         st.session_state.applied_filters = {}
+                #         if 'selected_coordinates' in st.session_state:
+                #             del st.session_state.selected_coordinates
+                #         st.rerun()
                 
-                with col2:
-                    if st.button("📊 Show Query", use_container_width=True, key="show_query_main"):
-                        # Show the generated query
-                        schema = st.session_state.get('schema', 'public')
+                # with col2:
+                #     if st.button("📊 Show Query", use_container_width=True, key="show_query_main"):
+                #         # Show the generated query
+                #         schema = st.session_state.get('schema', 'public')
                         
-                        if table == 'engineered_property_data' and 'location_search' in filters:
-                            # Distance-based query
-                            location_info = filters['location_search']
-                            user_lat = location_info['lat']
-                            user_lon = location_info['lon']
-                            user_regency = location_info['regency']
+                #         if table == 'engineered_property_data' and 'location_search' in filters:
+                #             # Distance-based query
+                #             location_info = filters['location_search']
+                #             user_lat = location_info['lat']
+                #             user_lon = location_info['lon']
+                #             user_regency = location_info['regency']
                             
-                            select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
+                #             select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
                             
-                            query = f"""
-                            SELECT {select_columns_str},
-                                   ST_Distance(
-                                       ST_Point(CAST("longitude" AS FLOAT), CAST("latitude" AS FLOAT)),
-                                       ST_Point({user_lon}, {user_lat})
-                                   ) as distance_meters
-                            FROM "{schema}"."{table}"
-                            WHERE "latitude" IS NOT NULL 
-                            AND "longitude" IS NOT NULL
-                            AND "wadmkk" = '{user_regency}'
-                            """
+                #             query = f"""
+                #             SELECT {select_columns_str},
+                #                    ST_Distance(
+                #                        ST_Point(CAST("longitude" AS FLOAT), CAST("latitude" AS FLOAT)),
+                #                        ST_Point({user_lon}, {user_lat})
+                #                    ) as distance_meters
+                #             FROM "{schema}"."{table}"
+                #             WHERE "latitude" IS NOT NULL 
+                #             AND "longitude" IS NOT NULL
+                #             AND "wadmkk" = '{user_regency}'
+                #             """
                             
-                            # Add filter conditions
-                            if 'kondisi_wilayah_sekitar' in filters:
-                                kondisi_values = "', '".join(filters['kondisi_wilayah_sekitar'])
-                                query += f" AND \"kondisi_wilayah_sekitar\" IN ('{kondisi_values}')"
+                #             # Add filter conditions
+                #             if 'kondisi_wilayah_sekitar' in filters:
+                #                 kondisi_values = "', '".join(filters['kondisi_wilayah_sekitar'])
+                #                 query += f" AND \"kondisi_wilayah_sekitar\" IN ('{kondisi_values}')"
                             
-                            if 'luas_tanah' in filters and filters['luas_tanah'].get('type') == 'range':
-                                luas_filter = filters['luas_tanah']
-                                query += f" AND CAST(\"luas_tanah\" AS FLOAT) BETWEEN {luas_filter['min']} AND {luas_filter['max']}"
+                #             if 'luas_tanah' in filters and filters['luas_tanah'].get('type') == 'range':
+                #                 luas_filter = filters['luas_tanah']
+                #                 query += f" AND CAST(\"luas_tanah\" AS FLOAT) BETWEEN {luas_filter['min']} AND {luas_filter['max']}"
                             
-                            if 'hpm' in filters and filters['hpm'].get('type') == 'range':
-                                hpm_filter = filters['hpm']
-                                query += f" AND CAST(\"hpm\" AS FLOAT) BETWEEN {hpm_filter['min']} AND {hpm_filter['max']}"
+                #             if 'hpm' in filters and filters['hpm'].get('type') == 'range':
+                #                 hpm_filter = filters['hpm']
+                #                 query += f" AND CAST(\"hpm\" AS FLOAT) BETWEEN {hpm_filter['min']} AND {hpm_filter['max']}"
                             
-                            query += " ORDER BY distance_meters ASC LIMIT 300"
+                #             query += " ORDER BY distance_meters ASC LIMIT 300"
                             
-                        else:
-                            # Standard query
-                            select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
-                            query = f'SELECT {select_columns_str} FROM "{schema}"."{table}"'
+                #         else:
+                #             # Standard query
+                #             select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
+                #             query = f'SELECT {select_columns_str} FROM "{schema}"."{table}"'
                             
-                            where_conditions = []
-                            for col, filter_val in filters.items():
-                                if col == 'location_search':
-                                    continue
-                                if isinstance(filter_val, list) and filter_val:
-                                    values_str = "', '".join([str(v) for v in filter_val])
-                                    where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                                elif isinstance(filter_val, dict):
-                                    if filter_val.get('type') == 'range':
-                                        where_conditions.append(f'CAST("{col}" AS FLOAT) BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                                    elif filter_val.get('type') == 'text':
-                                        where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
+                #             where_conditions = []
+                #             for col, filter_val in filters.items():
+                #                 if col == 'location_search':
+                #                     continue
+                #                 if isinstance(filter_val, list) and filter_val:
+                #                     values_str = "', '".join([str(v) for v in filter_val])
+                #                     where_conditions.append(f'"{col}" IN (\'{values_str}\')')
+                #                 elif isinstance(filter_val, dict):
+                #                     if filter_val.get('type') == 'range':
+                #                         where_conditions.append(f'CAST("{col}" AS FLOAT) BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
+                #                     elif filter_val.get('type') == 'text':
+                #                         where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
                             
-                            if where_conditions:
-                                query += ' WHERE ' + ' AND '.join(where_conditions)
+                #             if where_conditions:
+                #                 query += ' WHERE ' + ' AND '.join(where_conditions)
                         
-                        st.code(query, language="sql")
+                #         st.code(query, language="sql")
                 
-                # Show applied filters summary
-                if filters:
-                    st.markdown("**Applied Filters:**")
-                    for col, filter_val in filters.items():
-                        if col == 'location_search':
-                            location_info = filter_val
-                            st.write(f"• 📍 Location: {location_info['lat']:.6f}, {location_info['lon']:.6f}")
-                            st.write(f"• 🏘️ Search within: {location_info['regency']}")
-                        elif isinstance(filter_val, list):
-                            st.write(f"• `{col}`: {len(filter_val)} selected values")
-                        elif isinstance(filter_val, dict):
-                            if filter_val.get('type') == 'range':
-                                st.write(f"• `{col}`: {filter_val['min']:.0f} - {filter_val['max']:.0f}")
-                            elif filter_val.get('type') == 'text':
-                                st.write(f"• `{col}`: contains '{filter_val['search']}'")
+                # # Show applied filters summary
+                # if filters:
+                #     st.markdown("**Applied Filters:**")
+                #     for col, filter_val in filters.items():
+                #         if col == 'location_search':
+                #             location_info = filter_val
+                #             st.write(f"• 📍 Location: {location_info['lat']:.6f}, {location_info['lon']:.6f}")
+                #             st.write(f"• 🏘️ Search within: {location_info['regency']}")
+                #         elif isinstance(filter_val, list):
+                #             st.write(f"• `{col}`: {len(filter_val)} selected values")
+                #         elif isinstance(filter_val, dict):
+                #             if filter_val.get('type') == 'range':
+                #                 st.write(f"• `{col}`: {filter_val['min']:.0f} - {filter_val['max']:.0f}")
+                #             elif filter_val.get('type') == 'text':
+                #                 st.write(f"• `{col}`: contains '{filter_val['search']}'")
                 
-                # Flexible filtering for other tables (keep existing logic)
-                if table != 'engineered_property_data':
-                    # Then continue with the flexible filter UI below as you currently have it
-                    st.markdown("Apply filters to focus on specific data subsets (you can apply multiple filters):")
+                # # Flexible filtering for other tables (keep existing logic)
+                # if table != 'engineered_property_data':
+                #     # Then continue with the flexible filter UI below as you currently have it
+                #     st.markdown("Apply filters to focus on specific data subsets (you can apply multiple filters):")
                     
-                    # Initialize session state for multiple filters if not exists
-                    if 'filter_steps' not in st.session_state:
-                        st.session_state.filter_steps = []
+                #     # Initialize session state for multiple filters if not exists
+                #     if 'filter_steps' not in st.session_state:
+                #         st.session_state.filter_steps = []
                     
-                    # Add filter button
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        new_filter_column = st.selectbox(
-                            "Add a new filter for column:",
-                            ["Select a column..."] + selected_columns,
-                            key="new_filter_selector"
-                        )
-                    with col2:
-                        st.write("")
-                        if st.button("➕ Add Filter", use_container_width=True, key="add_filter_flexible") and new_filter_column != "Select a column...":
-                            if new_filter_column not in [step['column'] for step in st.session_state.filter_steps]:
-                                st.session_state.filter_steps.append({
-                                    'column': new_filter_column,
-                                    'id': len(st.session_state.filter_steps)
-                                })
-                                st.rerun()
+                #     # Add filter button
+                #     col1, col2 = st.columns([3, 1])
+                #     with col1:
+                #         new_filter_column = st.selectbox(
+                #             "Add a new filter for column:",
+                #             ["Select a column..."] + selected_columns,
+                #             key="new_filter_selector"
+                #         )
+                #     with col2:
+                #         st.write("")
+                #         if st.button("➕ Add Filter", use_container_width=True, key="add_filter_flexible") and new_filter_column != "Select a column...":
+                #             if new_filter_column not in [step['column'] for step in st.session_state.filter_steps]:
+                #                 st.session_state.filter_steps.append({
+                #                     'column': new_filter_column,
+                #                     'id': len(st.session_state.filter_steps)
+                #                 })
+                #                 st.rerun()
                     
-                    # Display and configure active filters
-                    if st.session_state.filter_steps:
-                        st.markdown("**Active Filters:**")
+                #     # Display and configure active filters
+                #     if st.session_state.filter_steps:
+                #         st.markdown("**Active Filters:**")
                         
-                        for i, filter_step in enumerate(st.session_state.filter_steps):
-                            filter_col = filter_step['column']
+                #         for i, filter_step in enumerate(st.session_state.filter_steps):
+                #             filter_col = filter_step['column']
                             
-                            with st.container():
-                                # Filter header with remove button
-                                col1, col2 = st.columns([4, 1])
-                                with col1:
-                                    st.markdown(f"**🔍 Filter {i+1}: `{filter_col}`**")
-                                with col2:
-                                    if st.button("❌", key=f"remove_filter_{i}", help="Remove this filter"):
-                                        st.session_state.filter_steps.pop(i)
-                                        st.rerun()
+                #             with st.container():
+                #                 # Filter header with remove button
+                #                 col1, col2 = st.columns([4, 1])
+                #                 with col1:
+                #                     st.markdown(f"**🔍 Filter {i+1}: `{filter_col}`**")
+                #                 with col2:
+                #                     if st.button("❌", key=f"remove_filter_{i}", help="Remove this filter"):
+                #                         st.session_state.filter_steps.pop(i)
+                #                         st.rerun()
                                 
-                                # Get unique values for this column
-                                with st.spinner(f"Loading values for {filter_col}..."):
-                                    unique_values, msg = st.session_state.db_connection.get_column_unique_values(
-                                        st.session_state.selected_table, 
-                                        filter_col,
-                                        st.session_state.get('schema', 'public')
-                                    )
+                #                 # Get unique values for this column
+                #                 with st.spinner(f"Loading values for {filter_col}..."):
+                #                     unique_values, msg = st.session_state.db_connection.get_column_unique_values(
+                #                         st.session_state.selected_table, 
+                #                         filter_col,
+                #                         st.session_state.get('schema', 'public')
+                #                     )
                                 
-                                if unique_values:
-                                    # Determine filter type
-                                    col_type = st.session_state.table_columns[
-                                        st.session_state.table_columns['column_name'] == filter_col
-                                    ]['data_type'].iloc[0]
+                #                 if unique_values:
+                #                     # Determine filter type
+                #                     col_type = st.session_state.table_columns[
+                #                         st.session_state.table_columns['column_name'] == filter_col
+                #                     ]['data_type'].iloc[0]
                                     
-                                    if len(unique_values) <= 50:  # Categorical filter
-                                        selected_values = st.multiselect(
-                                            f"Select values for {filter_col}:",
-                                            unique_values,
-                                            default=unique_values,
-                                            key=f"filter_{filter_col}_{i}"
-                                        )
-                                        if len(selected_values) < len(unique_values):
-                                            filters[filter_col] = selected_values
+                #                     if len(unique_values) <= 50:  # Categorical filter
+                #                         selected_values = st.multiselect(
+                #                             f"Select values for {filter_col}:",
+                #                             unique_values,
+                #                             default=unique_values,
+                #                             key=f"filter_{filter_col}_{i}"
+                #                         )
+                #                         if len(selected_values) < len(unique_values):
+                #                             filters[filter_col] = selected_values
                                     
-                                    else:  # Range or text filter
-                                        if 'int' in col_type.lower() or 'float' in col_type.lower() or 'numeric' in col_type.lower():
-                                            # Numeric range filter
-                                            col1, col2 = st.columns(2)
-                                            with col1:
-                                                min_val = st.number_input(
-                                                    f"Min {filter_col}:", 
-                                                    value=float(min(unique_values)), 
-                                                    key=f"min_{filter_col}_{i}"
-                                                )
-                                            with col2:
-                                                max_val = st.number_input(
-                                                    f"Max {filter_col}:", 
-                                                    value=float(max(unique_values)), 
-                                                    key=f"max_{filter_col}_{i}"
-                                                )
+                #                     else:  # Range or text filter
+                #                         if 'int' in col_type.lower() or 'float' in col_type.lower() or 'numeric' in col_type.lower():
+                #                             # Numeric range filter
+                #                             col1, col2 = st.columns(2)
+                #                             with col1:
+                #                                 min_val = st.number_input(
+                #                                     f"Min {filter_col}:", 
+                #                                     value=float(min(unique_values)), 
+                #                                     key=f"min_{filter_col}_{i}"
+                #                                 )
+                #                             with col2:
+                #                                 max_val = st.number_input(
+                #                                     f"Max {filter_col}:", 
+                #                                     value=float(max(unique_values)), 
+                #                                     key=f"max_{filter_col}_{i}"
+                #                                 )
                                             
-                                            if min_val != min(unique_values) or max_val != max(unique_values):
-                                                filters[filter_col] = {'min': min_val, 'max': max_val, 'type': 'range'}
+                #                             if min_val != min(unique_values) or max_val != max(unique_values):
+                #                                 filters[filter_col] = {'min': min_val, 'max': max_val, 'type': 'range'}
                                         
-                                        else:
-                                            # Text search filter
-                                            search_term = st.text_input(
-                                                f"Search in {filter_col}:", 
-                                                key=f"search_{filter_col}_{i}",
-                                                help="Use % as wildcard (e.g., 'Jakarta%' for starts with Jakarta)"
-                                            )
-                                            if search_term:
-                                                filters[filter_col] = {'search': search_term, 'type': 'text'}
+                #                         else:
+                #                             # Text search filter
+                #                             search_term = st.text_input(
+                #                                 f"Search in {filter_col}:", 
+                #                                 key=f"search_{filter_col}_{i}",
+                #                                 help="Use % as wildcard (e.g., 'Jakarta%' for starts with Jakarta)"
+                #                             )
+                #                             if search_term:
+                #                                 filters[filter_col] = {'search': search_term, 'type': 'text'}
                                 
-                                else:
-                                    st.warning(f"Could not load values for {filter_col}")
+                #                 else:
+                #                     st.warning(f"Could not load values for {filter_col}")
                                 
-                                st.markdown("---")
+                #                 st.markdown("---")
                         
-                        # Clear all filters button
-                        if st.button("🗑️ Clear All Filters", use_container_width=True, key="clear_all_filters_flexible"):
-                            st.session_state.filter_steps = []
-                            st.rerun()
+                #         # Clear all filters button
+                #         if st.button("🗑️ Clear All Filters", use_container_width=True, key="clear_all_filters_flexible"):
+                #             st.session_state.filter_steps = []
+                #             st.rerun()
                     
-                    else:
-                        st.info("No filters applied. Use the dropdown above to add filters.")
+                #     else:
+                #         st.info("No filters applied. Use the dropdown above to add filters.")
                 
-                st.markdown('</div>', unsafe_allow_html=True)
+                # st.markdown('</div>', unsafe_allow_html=True)
                 
                 # Get Data button
                 st.markdown("### 🚀 **Load Data**")
