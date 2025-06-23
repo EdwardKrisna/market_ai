@@ -1115,7 +1115,7 @@ def render_data_selection():
                 # Get Data button
                 st.markdown("### 🚀 **Load Data**")
                 
-                if st.button("🎯 Get Data", type="primary", use_container_width=True):
+                if st.button("🎯 Get Data", type="primary", use_container_width=True, key="get_data_main_button"):
                     # Build the SQL query
                     schema = st.session_state.get('schema', 'public')
                     
@@ -1231,14 +1231,14 @@ def render_data_selection():
                 col1, col2 = st.columns(2)
                 
                 with col1:
-                    if st.button("🔄 Reset Filters", use_container_width=True):
+                    if st.button("🔄 Reset Filters", use_container_width=True, key="reset_filters_main"):
                         st.session_state.applied_filters = {}
                         if 'selected_coordinates' in st.session_state:
                             del st.session_state.selected_coordinates
                         st.rerun()
                 
                 with col2:
-                    if st.button("📊 Show Query", use_container_width=True):
+                    if st.button("📊 Show Query", use_container_width=True, key="show_query_main"):
                         # Show the generated query
                         schema = st.session_state.get('schema', 'public')
                         
@@ -1336,7 +1336,7 @@ def render_data_selection():
                         )
                     with col2:
                         st.write("")
-                        if st.button("➕ Add Filter", use_container_width=True) and new_filter_column != "Select a column...":
+                        if st.button("➕ Add Filter", use_container_width=True, key="add_filter_flexible") and new_filter_column != "Select a column...":
                             if new_filter_column not in [step['column'] for step in st.session_state.filter_steps]:
                                 st.session_state.filter_steps.append({
                                     'column': new_filter_column,
@@ -1421,7 +1421,7 @@ def render_data_selection():
                                 st.markdown("---")
                         
                         # Clear all filters button
-                        if st.button("🗑️ Clear All Filters", use_container_width=True):
+                        if st.button("🗑️ Clear All Filters", use_container_width=True, key="clear_all_filters_flexible"):
                             st.session_state.filter_steps = []
                             st.rerun()
                     
