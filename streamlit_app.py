@@ -407,32 +407,23 @@ def render_data_selection():
 
     # Table selection
     st.markdown("### 📋 **Pilih Data!**")
-    st.markdown("Pilih salah satu data yang tersedia!")
-    
-    # Create clickable table cards
     cols = st.columns(3)
     
     for i, (table_key, table_info) in enumerate(available_tables.items()):
         with cols[i % 3]:
-            # Create a container for the card
-            card_container = st.container()
-            
-            # Check if this table is selected
-            is_selected = st.session_state.selected_table == table_key
-            card_class = "selected-table" if is_selected else "data-table-card"
-            
-            # Create the card with button
             if st.button(
                 f"{table_info['icon']} {table_info['name']}\n{table_info['description']}", 
                 key=f"table_{table_key}",
                 use_container_width=True
             ):
                 st.session_state.selected_table = table_key
-                st.session_state.table_columns = None  # Reset columns when table changes
-                st.session_state.applied_filters = {}  # Reset filters
+                st.session_state.table_columns = None
+                st.session_state.applied_filters = {}
+                if 'selected_coordinates' in st.session_state:
+                    del st.session_state.selected_coordinates
                 st.rerun()
     
-    # Show selected table
+    # Show selected table and load data
     if st.session_state.selected_table:
         selected_info = available_tables[st.session_state.selected_table]
         st.markdown(f'<div class="success-box">✅ Selected: {selected_info["icon"]} {selected_info["name"]}</div>', unsafe_allow_html=True)
@@ -450,1093 +441,369 @@ def render_data_selection():
                     st.error(f"Failed to load table structure: {msg}")
                     return
         
-        # Column selection and filtering
-        if st.session_state.table_columns is not None:
-            st.markdown("### 📊 **Column Selection & Filtering**")
-            
-            # Show available columns
-            with st.expander("📋 **Available Columns**", expanded=False):
-                st.dataframe(st.session_state.table_columns, use_container_width=True)
-            
-            # Add data preview section
-            st.markdown("### 👀 **Data Preview**")
-            with st.spinner("Loading data preview..."):
-                # Get sample data from the table
-                schema = st.session_state.get('schema', 'public')
-                preview_query = f'SELECT * FROM "{schema}"."{st.session_state.selected_table}" LIMIT 5'
+        # Column selection
+        available_columns = st.session_state.table_columns['column_name'].tolist()
+        
+        if st.session_state.selected_table == 'engineered_property_data':
+            # Land Market specific setup
+            mandatory_cols = ['luas_tanah', 'hpm', 'longitude', 'latitude']
+            user_selectable_cols = [col for col in available_columns if col not in mandatory_cols]
+
+            selected_user_cols = st.multiselect(
+                "Select up to 6 columns for Land Market analysis:",
+                user_selectable_cols,
+                default=[],
+                help="Mandatory columns luas_tanah, hmp, longitude, latitude are always included."
+            )
+
+            if len(selected_user_cols) > 6:
+                st.warning("⚠️ You can select a maximum of 6 columns only.")
                 
-                try:
-                    preview_df, preview_msg = st.session_state.db_connection.execute_query(preview_query)
-                    if preview_df is not None:
-                        st.markdown("**First 5 rows of the selected table:**")
-                        st.dataframe(preview_df, use_container_width=True)
-                        
-                        # Show basic info about the preview
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Preview Rows", len(preview_df))
-                        with col2:
-                            st.metric("Total Columns", len(preview_df.columns))
-                        with col3:
-                            numeric_cols = len(preview_df.select_dtypes(include=[np.number]).columns)
-                            st.metric("Numeric Columns", numeric_cols)
-                    else:
-                        st.error(f"Failed to load preview: {preview_msg}")
-                except Exception as e:
-                    st.error(f"Error loading data preview: {str(e)}")
+            selected_columns = mandatory_cols + selected_user_cols
+            st.info(f"📊 {len(selected_columns)} columns selected (4 mandatory + {len(selected_user_cols)} user-selected)")
             
-            st.markdown("---")
+            # Filtering method selection
+            st.markdown("### 🔍 **Choose Filtering Method**")
+            filter_method = st.radio(
+                "Select filtering approach:",
+                ["Option 1: Administrative Area Filter", "Option 2: Map Location Filter"],
+                help="Choose how you want to filter the land market data"
+            )
             
-            # Column selection
-            st.markdown("### 📊 **Column Selection**")
+            filters = {}
+            db = st.session_state.db_connection
+            schema = st.session_state.get('schema', 'public')
+            table = st.session_state.selected_table
             
-            available_columns = st.session_state.table_columns['column_name'].tolist()
+            if filter_method == "Option 1: Administrative Area Filter":
+                # Administrative filtering
+                with st.spinner("Loading administrative options..."):
+                    province_values, _ = db.get_column_unique_values(table, 'wadmpr', schema)
 
-            if st.session_state.selected_table == 'engineered_property_data':
-                mandatory_cols = ['luas_tanah', 'hpm', 'longitude', 'latitude']
-                user_selectable_cols = [col for col in available_columns if col not in mandatory_cols]
+                if province_values:
+                    selected_province = st.selectbox("Province:", [""] + province_values)
+                    if not selected_province:
+                        st.error("❌ Please select a province")
+                        return
 
-                selected_user_cols = st.multiselect(
-                    "Select up to 6 columns for Land Market analysis:",
-                    user_selectable_cols,
-                    default=[],
-                    help="Mandatory columns luas_tanah, hpm, longitude, latitude are always included."
-                )
+                    regency_query = f"SELECT DISTINCT wadmkk FROM \"{schema}\".\"{table}\" WHERE wadmpr = '{selected_province}' ORDER BY wadmkk"
+                    regency_df, _ = db.execute_query(regency_query)
+                    regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
 
-                if len(selected_user_cols) > 6:
-                    st.warning("⚠️ You can select a maximum of 6 columns only. Please deselect extra columns.")
-                    
-                selected_columns = mandatory_cols + selected_user_cols
+                    if regency_values:
+                        selected_regency = st.selectbox("Regency/City:", [""] + regency_values)
+                        if not selected_regency:
+                            st.error("❌ Please select a regency/city")
+                            return
 
-                st.info(f"📊 {len(selected_columns)} columns selected (4 mandatory + {len(selected_user_cols)} user-selected)")
-   
-            else:
-                selected_columns = available_columns
-                
-            if selected_columns:
-                st.markdown('<div class="filter-section">', unsafe_allow_html=True)
-                st.markdown("### 🔍 **Data Selection**")
-
-                db = st.session_state.db_connection
-                schema = st.session_state.get('schema', 'public')
-                table = st.session_state.selected_table
-
-                if table == 'engineered_property_data':
-                    # Land Market specific filtering options
-                    st.markdown("#### 🎯 **Choose Filtering Method**")
-                    
-                    filter_method = st.radio(
-                        "Select filtering approach:",
-                        ["Option 1: Administrative Area Filter", "Option 2: Map Location Filter"],
-                        help="Choose how you want to filter the land market data"
-                    )
-                    
-                    filters = {}
-                    
-                    if filter_method == "Option 1: Administrative Area Filter":
-                        # Original administrative filtering
-                        st.markdown("#### 🎯 **Required: Select Province/Region**")
-                        with st.spinner("Loading province options..."):
-                            province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
-
-                        if province_values:
-                            selected_province = st.selectbox(
-                                "Choose a Province/Region:",
-                                [""] + province_values,
-                                help="You must select a province/region to continue"
-                            )
-                            if not selected_province:
-                                st.error("❌ Please select a province/region to continue")
-                                st.stop()
-                        else:
-                            st.error(f"Could not load provinces: {province_msg}")
-                            st.stop()
-
-                        # Regency/City
-                        st.markdown("#### 🎯 **Required: Select Regency/City**")
-                        with st.spinner("Loading regency/city options..."):
-                            regency_query = f'''
-                                SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
-                                WHERE wadmpr = '{selected_province}'
-                                ORDER BY wadmkk
-                            '''
-                            regency_df, _ = db.execute_query(regency_query)
-                            regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
-
-                        if regency_values:
-                            selected_regency = st.selectbox(
-                                "Choose a Regency/City:",
-                                [""] + regency_values,
-                                help="You must select a regency/city to continue"
-                            )
-                            if not selected_regency:
-                                st.error("❌ Please select a regency/city to continue")
-                                st.stop()
-                        else:
-                            st.error("No regency/city found for the selected province.")
-                            st.stop()
-
-                        # District
-                        st.markdown("#### 🎯 **Required: Select District**")
-                        with st.spinner("Loading district options..."):
-                            district_query = f'''
-                                SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
-                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
-                                ORDER BY wadmkc
-                            '''
-                            district_df, _ = db.execute_query(district_query)
-                            district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
+                        district_query = f"SELECT DISTINCT wadmkc FROM \"{schema}\".\"{table}\" WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' ORDER BY wadmkc"
+                        district_df, _ = db.execute_query(district_query)
+                        district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
 
                         if district_values:
-                            selected_district = st.selectbox(
-                                "Choose a District:",
-                                [""] + district_values,
-                                help="You must select a district to continue"
-                            )
+                            selected_district = st.selectbox("District:", [""] + district_values)
                             if not selected_district:
-                                st.error("❌ Please select a district to continue")
-                                st.stop()
-                        else:
-                            st.error("No district found for the selected regency/city.")
-                            st.stop()
+                                st.error("❌ Please select a district")
+                                return
 
-                        # Subdistrict (optional)
-                        st.markdown("#### Optional: Select Subdistrict")
-                        with st.spinner("Loading subdistrict options..."):
-                            subdistrict_query = f'''
-                                SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
-                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
-                                ORDER BY wadmkd
-                            '''
-                            subdistrict_df, _ = db.execute_query(subdistrict_query)
-                            subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
-
-                        selected_subdistrict = st.selectbox(
-                            "Choose a Subdistrict (optional):",
-                            [""] + subdistrict_values
-                        )
-
-                        # Initialize filters
-                        filters['wadmpr'] = [selected_province]
-                        if selected_regency:
+                            filters['wadmpr'] = [selected_province]
                             filters['wadmkk'] = [selected_regency]
-                        if selected_district:
                             filters['wadmkc'] = [selected_district]
-                        if selected_subdistrict:
-                            filters['wadmkd'] = [selected_subdistrict]
-
-                        st.success("All required region filters selected! Continue to next steps.")
-                        
-                        # --- Optional Filters ---
-                        col1, col2 = st.columns(2)
-                        with col1:
-                            st.markdown("**Filter by Year:**")
-
-                            # Build WHERE clause for years (by area)
-                            area_where_parts = []
-                            for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
-                                if filters.get(key):
-                                    area_where_parts.append(f'"{key}" = \'{filters[key][0]}\'')
-                            area_where_clause = " AND ".join(area_where_parts)
-                            years_query = f"""
-                                SELECT DISTINCT tahun_pengambilan_data 
-                                FROM "{schema}"."{table}"
-                                WHERE {area_where_clause}
-                                ORDER BY tahun_pengambilan_data
-                            """
-                            years_df, _ = db.execute_query(years_query)
-                            year_values = years_df['tahun_pengambilan_data'].dropna().tolist() if years_df is not None else []
-
-                            if year_values:
-                                selected_years = st.multiselect(
-                                    "Select years:",
-                                    year_values,
-                                    default=year_values,
-                                    help="Choose which years to include in analysis"
-                                )
-                                if len(selected_years) < len(year_values):
-                                    filters['tahun_pengambilan_data'] = selected_years
-
-                        with col2:
-                            st.markdown("**Filter by HPM (Price Range):**")
-                            hpm_query = f"""
-                                SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
-                                FROM "{schema}"."{table}"
-                                WHERE {area_where_clause} AND "hpm" IS NOT NULL
-                            """
-                            hpm_result, _ = db.execute_query(hpm_query)
-                            if hpm_result is not None and len(hpm_result) > 0:
-                                min_hpm = float(hpm_result['min_hpm'].iloc[0])
-                                max_hpm = float(hpm_result['max_hmp'].iloc[0])
-
-                                st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
-
-                                hpm_range = st.slider(
-                                    "Select HPM range:",
-                                    min_value=min_hpm,
-                                    max_value=max_hpm,
-                                    value=(min_hpm, max_hpm),
-                                    step=1000.0,
-                                    help="Filter properties by price per square meter"
-                                )
-                                if hmp_range != (min_hpm, max_hpm):
-                                    filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
-                    
-                    elif filter_method == "Option 2: Map Location Filter":
-                        # Map-based filtering
-                        st.markdown("#### 🗺️ **Select Location on Map**")
-                        
-                        # Initialize session state for map selection
-                        if 'selected_coordinates' not in st.session_state:
-                            st.session_state.selected_coordinates = None
-                        
-                        # Simple map implementation with HTML/JavaScript
-                        st.markdown("**Click on the map to select a location:**")
-                        
-                        # Get default center coordinates (Indonesia center)
-                        center_lat = -2.5
-                        center_lon = 118.0
-                        
-                        # Try to get a better center from existing data
-                        try:
-                            center_query = f"""
-                                SELECT AVG(CAST("latitude" AS FLOAT)) as avg_lat, 
-                                       AVG(CAST("longitude" AS FLOAT)) as avg_lon
-                                FROM "{schema}"."{table}"
-                                WHERE "latitude" IS NOT NULL AND "longitude" IS NOT NULL
-                                AND CAST("latitude" AS FLOAT) BETWEEN -11 AND 6
-                                AND CAST("longitude" AS FLOAT) BETWEEN 95 AND 141
-                                LIMIT 1000
-                            """
-                            center_result, _ = db.execute_query(center_query)
-                            if center_result is not None and len(center_result) > 0:
-                                center_lat = float(center_result['avg_lat'].iloc[0])
-                                center_lon = float(center_result['avg_lon'].iloc[0])
-                        except Exception as e:
-                            pass  # Use default center
-                        
-                        # Create HTML map with click functionality
-                        map_html = f"""
-                        <!DOCTYPE html>
-                        <html>
-                        <head>
-                            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-                            <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-                            <style>
-                                #map {{ height: 400px; width: 100%; }}
-                                .coordinates {{ 
-                                    padding: 10px; 
-                                    background: #f0f0f0; 
-                                    margin: 10px 0; 
-                                    border-radius: 5px; 
-                                    text-align: center;
-                                    font-weight: bold;
-                                }}
-                            </style>
-                        </head>
-                        <body>
-                            <div id="map"></div>
-                            <div id="coordinates" class="coordinates">Click on the map to select coordinates</div>
-                            
-                            <script>
-                                // Initialize map
-                                var map = L.map('map').setView([{center_lat}, {center_lon}], 6);
-                                
-                                // Add tile layer
-                                L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
-                                    attribution: '© OpenStreetMap contributors'
-                                }}).addTo(map);
-                                
-                                var marker = null;
-                                var selectedLat = null;
-                                var selectedLon = null;
-                                
-                                // Handle map clicks
-                                map.on('click', function(e) {{
-                                    var lat = e.latlng.lat;
-                                    var lon = e.latlng.lng;
-                                    
-                                    // Remove existing marker
-                                    if (marker) {{
-                                        map.removeLayer(marker);
-                                    }}
-                                    
-                                    // Add new marker
-                                    marker = L.marker([lat, lon]).addTo(map);
-                                    
-                                    // Update coordinates display
-                                    selectedLat = lat;
-                                    selectedLon = lon;
-                                    document.getElementById('coordinates').innerHTML = 
-                                        'Selected: ' + lat.toFixed(6) + ', ' + lon.toFixed(6);
-                                    
-                                    // Store in browser storage for retrieval
-                                    localStorage.setItem('selected_lat', lat);
-                                    localStorage.setItem('selected_lon', lon);
-                                }});
-                                
-                                // Load existing coordinates if available
-                                var existingLat = localStorage.getItem('selected_lat');
-                                var existingLon = localStorage.getItem('selected_lon');
-                                if (existingLat && existingLon) {{
-                                    var lat = parseFloat(existingLat);
-                                    var lon = parseFloat(existingLon);
-                                    marker = L.marker([lat, lon]).addTo(map);
-                                    document.getElementById('coordinates').innerHTML = 
-                                        'Selected: ' + lat.toFixed(6) + ', ' + lon.toFixed(6);
-                                    selectedLat = lat;
-                                    selectedLon = lon;
-                                }}
-                            </script>
-                        </body>
-                        </html>
-                        """
-                        
-                        # Display the map
-                        st.components.v1.html(map_html, height=500)
-                        
-                        # Get coordinates from map selection
-                        col1, col2, col3 = st.columns([2, 2, 1])
-                        
-                        with col1:
-                            get_lat = st.number_input(
-                                "Selected Latitude:", 
-                                value=0.0,
-                                step=0.000001,
-                                format="%.6f",
-                                key="map_lat_display"
-                            )
-                        
-                        with col2:
-                            get_lon = st.number_input(
-                                "Selected Longitude:", 
-                                value=0.0,
-                                step=0.000001,
-                                format="%.6f",
-                                key="map_lon_display"
-                            )
-                        
-                        with col3:
-                            st.write("")
-                            if st.button("🔍 Use Selected Point", use_container_width=True):
-                                if get_lat != 0.0 and get_lon != 0.0:
-                                    # Validate and get regency info for the selected location
-                                    try:
-                                        with st.spinner("Validating selected location..."):
-                                            location_query = f"""
-                                                SELECT DISTINCT wadmkk, wadmpr, COUNT(*) as data_count
-                                                FROM "{schema}"."{table}"
-                                                WHERE "latitude" IS NOT NULL AND "longitude" IS NOT NULL
-                                                AND CAST("latitude" AS FLOAT) IS NOT NULL
-                                                AND CAST("longitude" AS FLOAT) IS NOT NULL
-                                                GROUP BY wadmkk, wadmpr
-                                                ORDER BY ST_Distance(
-                                                    ST_Point(AVG(CAST("longitude" AS FLOAT)), AVG(CAST("latitude" AS FLOAT))),
-                                                    ST_Point({get_lon}, {get_lat})
-                                                )
-                                                LIMIT 1
-                                            """
-                                            location_result, location_msg = db.execute_query(location_query)
-                                            
-                                            if location_result is not None and len(location_result) > 0:
-                                                regency = location_result['wadmkk'].iloc[0]
-                                                province = location_result['wadmpr'].iloc[0]
-                                                data_count = location_result['data_count'].iloc[0]
-                                                
-                                                # Double-check if there's actually data in this regency
-                                                validation_query = f"""
-                                                    SELECT COUNT(*) as count
-                                                    FROM "{schema}"."{table}"
-                                                    WHERE wadmkk = '{regency}'
-                                                    AND "latitude" IS NOT NULL 
-                                                    AND "longitude" IS NOT NULL
-                                                """
-                                                validation_result, _ = db.execute_query(validation_query)
-                                                
-                                                if validation_result is not None and validation_result['count'].iloc[0] > 0:
-                                                    st.session_state.selected_coordinates = (get_lat, get_lon)
-                                                    st.success(f"✅ Location validated!")
-                                                    st.info(f"📍 Nearest area: {regency}, {province}")
-                                                    st.info(f"📊 Available data points: {data_count:,}")
-                                                    
-                                                    # Set filters for distance-based query
-                                                    filters['location_search'] = {
-                                                        'lat': get_lat,
-                                                        'lon': get_lon,
-                                                        'regency': regency
-                                                    }
-                                                else:
-                                                    st.error("❌ No data available for the nearest regency to this location.")
-                                                    st.warning("🔄 Please select a different location on the map.")
-                                                    if 'selected_coordinates' in st.session_state:
-                                                        del st.session_state.selected_coordinates
-                                            else:
-                                                st.error("❌ Could not find any nearby areas with data.")
-                                                st.warning("🔄 Please select a location closer to populated areas in Indonesia.")
-                                                st.info("💡 Try clicking on areas around major cities or known regions.")
-                                                
-                                    except Exception as e:
-                                        st.error(f"❌ Error validating location: {str(e)}")
-                                        st.warning("🔄 Please try selecting a different location.")
-                                        if 'selected_coordinates' in st.session_state:
-                                            del st.session_state.selected_coordinates
-                                else:
-                                    st.warning("⚠️ Please click on the map to select coordinates first.")
-                        
-                        # JavaScript to sync map coordinates with input fields
-                        st.markdown("""
-                        <script>
-                        function updateCoordinates() {
-                            const lat = localStorage.getItem('selected_lat');
-                            const lon = localStorage.getItem('selected_lon');
-                            if (lat && lon) {
-                                // Try to update the input fields
-                                const latInput = document.querySelector('input[data-testid="stNumberInput"][aria-label*="Latitude"]');
-                                const lonInput = document.querySelector('input[data-testid="stNumberInput"][aria-label*="Longitude"]');
-                                if (latInput) latInput.value = parseFloat(lat).toFixed(6);
-                                if (lonInput) lonInput.value = parseFloat(lon).toFixed(6);
-                            }
+            
+            elif filter_method == "Option 2: Map Location Filter":
+                # Map-based filtering
+                st.markdown("**Click on the map to select a location:**")
+                
+                # Simple HTML map with click functionality
+                map_html = """
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+                    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+                    <style>
+                        #map { height: 400px; width: 100%; }
+                        .coordinates { 
+                            padding: 10px; background: #f0f0f0; margin: 10px 0; 
+                            border-radius: 5px; text-align: center; font-weight: bold;
                         }
-                        // Check for updates every second
-                        setInterval(updateCoordinates, 1000);
-                        </script>
-                        """, unsafe_allow_html=True)
+                    </style>
+                </head>
+                <body>
+                    <div id="map"></div>
+                    <div id="coordinates" class="coordinates">Click on the map to select coordinates</div>
+                    
+                    <script>
+                        var map = L.map('map').setView([-2.5, 118.0], 6);
+                        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
                         
-                        # Show selected coordinates and validation status
-                        if st.session_state.selected_coordinates:
-                            lat, lon = st.session_state.selected_coordinates
+                        var marker = null;
+                        
+                        map.on('click', function(e) {
+                            var lat = e.latlng.lat;
+                            var lon = e.latlng.lng;
                             
-                            if 'location_search' in filters:
-                                # Location is validated
-                                location_info = filters['location_search']
-                                st.success(f"📍 Validated Location: {lat:.6f}, {lon:.6f}")
-                                st.info(f"🏘️ Search area: {location_info['regency']}")
-                                
-                                # Optional filters for map-based search
-                                st.markdown("#### 🔍 **Optional Filters**")
-                                
-                                col1, col2, col3 = st.columns(3)
-                                
-                                # Kondisi Wilayah Sekitar filter
-                                with col1:
-                                    st.markdown("**Kondisi Wilayah Sekitar:**")
-                                    try:
-                                        kondisi_query = f"""
-                                            SELECT DISTINCT kondisi_wilayah_sekitar 
-                                            FROM "{schema}"."{table}"
-                                            WHERE kondisi_wilayah_sekitar IS NOT NULL
-                                            AND wadmkk = '{location_info['regency']}'
-                                            ORDER BY kondisi_wilayah_sekitar
-                                        """
-                                        kondisi_df, _ = db.execute_query(kondisi_query)
-                                        kondisi_values = kondisi_df['kondisi_wilayah_sekitar'].tolist() if kondisi_df is not None else []
-                                        
-                                        if kondisi_values:
-                                            selected_kondisi = st.multiselect(
-                                                "Select conditions:",
-                                                kondisi_values,
-                                                default=kondisi_values,
-                                                help="Filter by surrounding area conditions"
-                                            )
-                                            if len(selected_kondisi) < len(kondisi_values):
-                                                filters['kondisi_wilayah_sekitar'] = selected_kondisi
-                                        else:
-                                            st.info("No condition data available")
-                                    except Exception as e:
-                                        st.warning(f"Could not load condition options: {str(e)}")
-                                
-                                # Luas Tanah filter
-                                with col2:
-                                    st.markdown("**Luas Tanah (m²):**")
-                                    try:
-                                        luas_query = f"""
-                                            SELECT MIN(CAST("luas_tanah" AS FLOAT)) as min_luas, 
-                                                   MAX(CAST("luas_tanah" AS FLOAT)) as max_luas
-                                            FROM "{schema}"."{table}"
-                                            WHERE "luas_tanah" IS NOT NULL 
-                                            AND CAST("luas_tanah" AS FLOAT) > 0
-                                            AND wadmkk = '{location_info['regency']}'
-                                        """
-                                        luas_result, _ = db.execute_query(luas_query)
-                                        if luas_result is not None and len(luas_result) > 0:
-                                            min_luas = float(luas_result['min_luas'].iloc[0])
-                                            max_luas = float(luas_result['max_luas'].iloc[0])
-                                            
-                                            st.write(f"Range: {min_luas:,.0f} - {max_luas:,.0f}")
-                                            
-                                            luas_range = st.slider(
-                                                "Select range:",
-                                                min_value=min_luas,
-                                                max_value=max_luas,
-                                                value=(min_luas, max_luas),
-                                                step=10.0,
-                                                help="Filter by land area",
-                                                key="luas_tanah_slider"
-                                            )
-                                            if luas_range != (min_luas, max_luas):
-                                                filters['luas_tanah'] = {'min': luas_range[0], 'max': luas_range[1], 'type': 'range'}
-                                        else:
-                                            st.info("No land area data available")
-                                    except Exception as e:
-                                        st.warning(f"Could not load land area range: {str(e)}")
-                                
-                                # HPM filter
-                                with col3:
-                                    st.markdown("**HPM (Price/m²):**")
-                                    try:
-                                        hpm_query = f"""
-                                            SELECT MIN(CAST("hpm" AS FLOAT)) as min_hpm, 
-                                                   MAX(CAST("hpm" AS FLOAT)) as max_hpm
-                                            FROM "{schema}"."{table}"
-                                            WHERE "hpm" IS NOT NULL 
-                                            AND CAST("hpm" AS FLOAT) > 0
-                                            AND wadmkk = '{location_info['regency']}'
-                                        """
-                                        hpm_result, _ = db.execute_query(hpm_query)
-                                        if hpm_result is not None and len(hpm_result) > 0:
-                                            min_hpm = float(hpm_result['min_hpm'].iloc[0])
-                                            max_hpm = float(hpm_result['max_hpm'].iloc[0])
-                                            
-                                            st.write(f"Range: {min_hpm:,.0f} - {max_hpm:,.0f}")
-                                            
-                                            hpm_range = st.slider(
-                                                "Select range:",
-                                                min_value=min_hpm,
-                                                max_value=max_hpm,
-                                                value=(min_hpm, max_hpm),
-                                                step=1000.0,
-                                                help="Filter by price per square meter",
-                                                key="hpm_slider"
-                                            )
-                                            if hpm_range != (min_hpm, max_hpm):
-                                                filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
-                                        else:
-                                            st.info("No price data available")
-                                    except Exception as e:
-                                        st.warning(f"Could not load HPM range: {str(e)}")
-                            else:
-                                # Location selected but not validated yet
-                                st.warning(f"📍 Location selected: {lat:.6f}, {lon:.6f}")
-                                st.info("👆 Click 'Use Selected Point' button to validate this location")
-                        
-                        else:
-                            st.info("👆 Click on the map above to select a location")
-                            st.markdown("**Instructions:**")
-                            st.markdown("1. 🖱️ Click anywhere on the map")
-                            st.markdown("2. 📍 Coordinates will appear in the input fields")
-                            st.markdown("3. 🔍 Click 'Use Selected Point' to validate")
-                            st.markdown("4. ✅ If valid, you can apply additional filters")
-
-                else:
-                    # For other tables: existing flexible filtering logic
-                    st.markdown("#### 🎯 **Required: Select Province/Region**")
-                    with st.spinner("Loading province options..."):
-                        province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
-
-                    if province_values:
-                        selected_province = st.selectbox(
-                            "Choose a Province/Region:",
-                            [""] + province_values,
-                            help="You must select a province/region to continue"
-                        )
-                        if not selected_province:
-                            st.error("❌ Please select a province/region to continue")
-                            st.stop()
-                    else:
-                        st.error(f"Could not load provinces: {province_msg}")
-                        st.stop()
-
-                    selected_regency = None
-                    selected_district = None
-                    selected_subdistrict = None
-
-                    # Regency/City (optional)
-                    st.markdown("#### Optional: Select Regency/City")
-                    with st.spinner("Loading regency/city options..."):
-                        regency_query = f'''
-                            SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
-                            WHERE wadmpr = '{selected_province}'
-                            ORDER BY wadmkk
-                        '''
-                        regency_df, _ = db.execute_query(regency_query)
-                        regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
-
-                    selected_regency = st.selectbox(
-                        "Choose a Regency/City (optional):",
-                        [""] + regency_values
+                            if (marker) map.removeLayer(marker);
+                            marker = L.marker([lat, lon]).addTo(map);
+                            
+                            document.getElementById('coordinates').innerHTML = 
+                                'Selected: ' + lat.toFixed(6) + ', ' + lon.toFixed(6);
+                            
+                            // Send coordinates to parent window
+                            window.parent.postMessage({
+                                type: 'mapClick',
+                                lat: lat,
+                                lon: lon
+                            }, '*');
+                        });
+                    </script>
+                </body>
+                </html>
+                """
+                
+                # Display map
+                st.components.v1.html(map_html, height=500)
+                
+                # Initialize coordinates in session state
+                if 'map_lat' not in st.session_state:
+                    st.session_state.map_lat = 0.0
+                if 'map_lon' not in st.session_state:
+                    st.session_state.map_lon = 0.0
+                
+                # Coordinate inputs and validation
+                col1, col2, col3 = st.columns([2, 2, 1])
+                
+                with col1:
+                    map_lat = st.number_input(
+                        "Selected Latitude:", 
+                        value=st.session_state.map_lat,
+                        step=0.000001,
+                        format="%.6f",
+                        key="map_lat_input"
                     )
-
-                    # District (optional, only if regency is selected)
-                    if selected_regency:
-                        st.markdown("#### Optional: Select District")
-                        with st.spinner("Loading district options..."):
-                            district_query = f'''
-                                SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
-                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
-                                ORDER BY wadmkc
-                            '''
-                            district_df, _ = db.execute_query(district_query)
-                            district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
-
-                        selected_district = st.selectbox(
-                            "Choose a District (optional):",
-                            [""] + district_values
-                        )
-
-                    # Subdistrict (optional, only if district is selected)
-                    if selected_district:
-                        st.markdown("#### Optional: Select Subdistrict")
-                        with st.spinner("Loading subdistrict options..."):
-                            subdistrict_query = f'''
-                                SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
-                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
-                                ORDER BY wadmkd
-                            '''
-                            subdistrict_df, _ = db.execute_query(subdistrict_query)
-                            subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
-
-                        selected_subdistrict = st.selectbox(
-                            "Choose a Subdistrict (optional):",
-                            [""] + subdistrict_values
-                        )
-
-                    # Initialize filters for non-Land Market tables
-                    filters = {}
-                    filters['wadmpr'] = [selected_province]
-                    if selected_regency:
-                        filters['wadmkk'] = [selected_regency]
-                    if selected_district:
-                        filters['wadmkc'] = [selected_district]
-                    if selected_subdistrict:
-                        filters['wadmkd'] = [selected_subdistrict]
-
-                st.markdown('</div>', unsafe_allow_html=True)
                 
-                # # Get Data button
-                # st.markdown("### 🚀 **Load Data**")
+                with col2:
+                    map_lon = st.number_input(
+                        "Selected Longitude:", 
+                        value=st.session_state.map_lon,
+                        step=0.000001,
+                        format="%.6f", 
+                        key="map_lon_input"
+                    )
                 
-                # if st.button("🎯 Get Data", type="primary", use_container_width=True, key="get_data_main_button"):
-                #     # Build the SQL query
-                #     schema = st.session_state.get('schema', 'public')
-                    
-                #     # Special handling for Land Market map-based filtering
-                #     if table == 'engineered_property_data' and 'location_search' in filters:
-                #         # Map-based distance query
-                #         location_info = filters['location_search']
-                #         user_lat = location_info['lat']
-                #         user_lon = location_info['lon']
-                #         user_regency = location_info['regency']
-                        
-                #         # Build SELECT clause with distance calculation
-                #         select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
-                        
-                #         query = f"""
-                #         SELECT {select_columns_str},
-                #                ST_Distance(
-                #                    ST_Point(CAST("longitude" AS FLOAT), CAST("latitude" AS FLOAT)),
-                #                    ST_Point({user_lon}, {user_lat})
-                #                ) as distance_meters
-                #         FROM "{schema}"."{table}"
-                #         WHERE "latitude" IS NOT NULL 
-                #         AND "longitude" IS NOT NULL
-                #         AND "wadmkk" = '{user_regency}'
-                #         """
-                        
-                #         # Add optional filters for map-based search
-                #         if 'kondisi_wilayah_sekitar' in filters:
-                #             kondisi_values = "', '".join(filters['kondisi_wilayah_sekitar'])
-                #             query += f" AND \"kondisi_wilayah_sekitar\" IN ('{kondisi_values}')"
-                        
-                #         if 'luas_tanah' in filters and filters['luas_tanah'].get('type') == 'range':
-                #             luas_filter = filters['luas_tanah']
-                #             query += f" AND CAST(\"luas_tanah\" AS FLOAT) BETWEEN {luas_filter['min']} AND {luas_filter['max']}"
-                        
-                #         if 'hpm' in filters and filters['hpm'].get('type') == 'range':
-                #             hpm_filter = filters['hpm']
-                #             query += f" AND CAST(\"hpm\" AS FLOAT) BETWEEN {hmp_filter['min']} AND {hpm_filter['max']}"
-                        
-                #         # Order by distance and limit to 300 nearest
-                #         query += " ORDER BY distance_meters ASC LIMIT 300"
-                    
-                #     else:
-                #         # Standard query for other filtering methods
-                #         # Build SELECT clause
-                #         select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
-                #         query = f'SELECT {select_columns_str} FROM "{schema}"."{table}"'
-                        
-                #         # Build WHERE clause
-                #         where_conditions = []
-                        
-                #         for col, filter_val in filters.items():
-                #             if col == 'location_search':  # Skip location_search for standard queries
-                #                 continue
-                                
-                #             if isinstance(filter_val, list):  # Categorical filter
-                #                 if filter_val:  # Only add condition if values are selected
-                #                     values_str = "', '".join([str(v) for v in filter_val])
-                #                     where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                            
-                #             elif isinstance(filter_val, dict):
-                #                 if filter_val.get('type') == 'range':
-                #                     where_conditions.append(f'CAST("{col}" AS FLOAT) BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                #                 elif filter_val.get('type') == 'text':
-                #                     where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
-                        
-                #         if where_conditions:
-                #             query += ' WHERE ' + ' AND '.join(where_conditions)
-                        
-                #         # Add limit for performance (except for distance-based queries)
-                #         query += ' LIMIT 100000'
-                    
-                #     # Execute query
-                #     with st.spinner("Loading data..."):
-                #         result_df, message = st.session_state.db_connection.execute_query(query)
-                    
-                #     if result_df is not None:
-                #         st.session_state.current_data = result_df
-                #         st.session_state.applied_filters = filters
-                        
-                #         # Special message for distance-based results
-                #         if table == 'engineered_property_data' and 'location_search' in filters:
-                #             st.success(f"✅ Found {len(result_df):,} nearest properties within {user_regency}!")
-                #             if 'distance_meters' in result_df.columns:
-                #                 min_dist = result_df['distance_meters'].min()
-                #                 max_dist = result_df['distance_meters'].max()
-                #                 avg_dist = result_df['distance_meters'].mean()
-                #                 st.info(f"📏 Distance range: {min_dist:.0f}m - {max_dist:.0f}m (avg: {avg_dist:.0f}m)")
-                #         else:
-                #             st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
-                        
-                #         # Show data preview
-                #         st.markdown("**Data Preview:**")
-                #         st.dataframe(result_df.head(10), use_container_width=True)
-                        
-                #         # Show summary statistics
-                #         col1, col2, col3, col4 = st.columns(4)
-                #         with col1:
-                #             st.metric("Total Rows", f"{len(result_df):,}")
-                #         with col2:
-                #             st.metric("Total Columns", len(result_df.columns))
-                #         with col3:
-                #             numeric_cols = len(result_df.select_dtypes(include=[np.number]).columns)
-                #             st.metric("Numeric Columns", numeric_cols)
-                #         with col4:
-                #             missing_pct = (result_df.isnull().sum().sum() / (result_df.shape[0] * result_df.shape[1]) * 100)
-                #             st.metric("Data Completeness", f"{100-missing_pct:.1f}%")
-                    
-                #     else:
-                #         st.error(f"Failed to load data: {message}")
-                
-                # # Reset and Show Query buttons
-                # col1, col2 = st.columns(2)
-                
-                # with col1:
-                #     if st.button("🔄 Reset Filters", use_container_width=True, key="reset_filters_main"):
-                #         st.session_state.applied_filters = {}
-                #         if 'selected_coordinates' in st.session_state:
-                #             del st.session_state.selected_coordinates
-                #         st.rerun()
-                
-                # with col2:
-                #     if st.button("📊 Show Query", use_container_width=True, key="show_query_main"):
-                #         # Show the generated query
-                #         schema = st.session_state.get('schema', 'public')
-                        
-                #         if table == 'engineered_property_data' and 'location_search' in filters:
-                #             # Distance-based query
-                #             location_info = filters['location_search']
-                #             user_lat = location_info['lat']
-                #             user_lon = location_info['lon']
-                #             user_regency = location_info['regency']
-                            
-                #             select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
-                            
-                #             query = f"""
-                #             SELECT {select_columns_str},
-                #                    ST_Distance(
-                #                        ST_Point(CAST("longitude" AS FLOAT), CAST("latitude" AS FLOAT)),
-                #                        ST_Point({user_lon}, {user_lat})
-                #                    ) as distance_meters
-                #             FROM "{schema}"."{table}"
-                #             WHERE "latitude" IS NOT NULL 
-                #             AND "longitude" IS NOT NULL
-                #             AND "wadmkk" = '{user_regency}'
-                #             """
-                            
-                #             # Add filter conditions
-                #             if 'kondisi_wilayah_sekitar' in filters:
-                #                 kondisi_values = "', '".join(filters['kondisi_wilayah_sekitar'])
-                #                 query += f" AND \"kondisi_wilayah_sekitar\" IN ('{kondisi_values}')"
-                            
-                #             if 'luas_tanah' in filters and filters['luas_tanah'].get('type') == 'range':
-                #                 luas_filter = filters['luas_tanah']
-                #                 query += f" AND CAST(\"luas_tanah\" AS FLOAT) BETWEEN {luas_filter['min']} AND {luas_filter['max']}"
-                            
-                #             if 'hpm' in filters and filters['hpm'].get('type') == 'range':
-                #                 hpm_filter = filters['hpm']
-                #                 query += f" AND CAST(\"hpm\" AS FLOAT) BETWEEN {hpm_filter['min']} AND {hpm_filter['max']}"
-                            
-                #             query += " ORDER BY distance_meters ASC LIMIT 300"
-                            
-                #         else:
-                #             # Standard query
-                #             select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
-                #             query = f'SELECT {select_columns_str} FROM "{schema}"."{table}"'
-                            
-                #             where_conditions = []
-                #             for col, filter_val in filters.items():
-                #                 if col == 'location_search':
-                #                     continue
-                #                 if isinstance(filter_val, list) and filter_val:
-                #                     values_str = "', '".join([str(v) for v in filter_val])
-                #                     where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                #                 elif isinstance(filter_val, dict):
-                #                     if filter_val.get('type') == 'range':
-                #                         where_conditions.append(f'CAST("{col}" AS FLOAT) BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                #                     elif filter_val.get('type') == 'text':
-                #                         where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
-                            
-                #             if where_conditions:
-                #                 query += ' WHERE ' + ' AND '.join(where_conditions)
-                        
-                #         st.code(query, language="sql")
-                
-                # # Show applied filters summary
-                # if filters:
-                #     st.markdown("**Applied Filters:**")
-                #     for col, filter_val in filters.items():
-                #         if col == 'location_search':
-                #             location_info = filter_val
-                #             st.write(f"• 📍 Location: {location_info['lat']:.6f}, {location_info['lon']:.6f}")
-                #             st.write(f"• 🏘️ Search within: {location_info['regency']}")
-                #         elif isinstance(filter_val, list):
-                #             st.write(f"• `{col}`: {len(filter_val)} selected values")
-                #         elif isinstance(filter_val, dict):
-                #             if filter_val.get('type') == 'range':
-                #                 st.write(f"• `{col}`: {filter_val['min']:.0f} - {filter_val['max']:.0f}")
-                #             elif filter_val.get('type') == 'text':
-                #                 st.write(f"• `{col}`: contains '{filter_val['search']}'")
-                
-                # # Flexible filtering for other tables (keep existing logic)
-                # if table != 'engineered_property_data':
-                #     # Then continue with the flexible filter UI below as you currently have it
-                #     st.markdown("Apply filters to focus on specific data subsets (you can apply multiple filters):")
-                    
-                #     # Initialize session state for multiple filters if not exists
-                #     if 'filter_steps' not in st.session_state:
-                #         st.session_state.filter_steps = []
-                    
-                #     # Add filter button
-                #     col1, col2 = st.columns([3, 1])
-                #     with col1:
-                #         new_filter_column = st.selectbox(
-                #             "Add a new filter for column:",
-                #             ["Select a column..."] + selected_columns,
-                #             key="new_filter_selector"
-                #         )
-                #     with col2:
-                #         st.write("")
-                #         if st.button("➕ Add Filter", use_container_width=True, key="add_filter_flexible") and new_filter_column != "Select a column...":
-                #             if new_filter_column not in [step['column'] for step in st.session_state.filter_steps]:
-                #                 st.session_state.filter_steps.append({
-                #                     'column': new_filter_column,
-                #                     'id': len(st.session_state.filter_steps)
-                #                 })
-                #                 st.rerun()
-                    
-                #     # Display and configure active filters
-                #     if st.session_state.filter_steps:
-                #         st.markdown("**Active Filters:**")
-                        
-                #         for i, filter_step in enumerate(st.session_state.filter_steps):
-                #             filter_col = filter_step['column']
-                            
-                #             with st.container():
-                #                 # Filter header with remove button
-                #                 col1, col2 = st.columns([4, 1])
-                #                 with col1:
-                #                     st.markdown(f"**🔍 Filter {i+1}: `{filter_col}`**")
-                #                 with col2:
-                #                     if st.button("❌", key=f"remove_filter_{i}", help="Remove this filter"):
-                #                         st.session_state.filter_steps.pop(i)
-                #                         st.rerun()
-                                
-                #                 # Get unique values for this column
-                #                 with st.spinner(f"Loading values for {filter_col}..."):
-                #                     unique_values, msg = st.session_state.db_connection.get_column_unique_values(
-                #                         st.session_state.selected_table, 
-                #                         filter_col,
-                #                         st.session_state.get('schema', 'public')
-                #                     )
-                                
-                #                 if unique_values:
-                #                     # Determine filter type
-                #                     col_type = st.session_state.table_columns[
-                #                         st.session_state.table_columns['column_name'] == filter_col
-                #                     ]['data_type'].iloc[0]
+                with col3:
+                    st.write("")
+                    if st.button("🔍 Use Point", use_container_width=True):
+                        if map_lat != 0.0 and map_lon != 0.0:
+                            try:
+                                with st.spinner("Validating location..."):
+                                    # Find nearest regency with data
+                                    location_query = f"""
+                                        SELECT DISTINCT wadmkk, wadmpr, COUNT(*) as data_count
+                                        FROM "{schema}"."{table}"
+                                        WHERE "latitude" IS NOT NULL AND "longitude" IS NOT NULL
+                                        GROUP BY wadmkk, wadmpr
+                                        ORDER BY ST_Distance(
+                                            ST_Point(AVG(CAST("longitude" AS FLOAT)), AVG(CAST("latitude" AS FLOAT))),
+                                            ST_Point({map_lon}, {map_lat})
+                                        )
+                                        LIMIT 1
+                                    """
+                                    location_result, _ = db.execute_query(location_query)
                                     
-                #                     if len(unique_values) <= 50:  # Categorical filter
-                #                         selected_values = st.multiselect(
-                #                             f"Select values for {filter_col}:",
-                #                             unique_values,
-                #                             default=unique_values,
-                #                             key=f"filter_{filter_col}_{i}"
-                #                         )
-                #                         if len(selected_values) < len(unique_values):
-                #                             filters[filter_col] = selected_values
-                                    
-                #                     else:  # Range or text filter
-                #                         if 'int' in col_type.lower() or 'float' in col_type.lower() or 'numeric' in col_type.lower():
-                #                             # Numeric range filter
-                #                             col1, col2 = st.columns(2)
-                #                             with col1:
-                #                                 min_val = st.number_input(
-                #                                     f"Min {filter_col}:", 
-                #                                     value=float(min(unique_values)), 
-                #                                     key=f"min_{filter_col}_{i}"
-                #                                 )
-                #                             with col2:
-                #                                 max_val = st.number_input(
-                #                                     f"Max {filter_col}:", 
-                #                                     value=float(max(unique_values)), 
-                #                                     key=f"max_{filter_col}_{i}"
-                #                                 )
-                                            
-                #                             if min_val != min(unique_values) or max_val != max(unique_values):
-                #                                 filters[filter_col] = {'min': min_val, 'max': max_val, 'type': 'range'}
+                                    if location_result is not None and len(location_result) > 0:
+                                        regency = location_result['wadmkk'].iloc[0]
+                                        province = location_result['wadmpr'].iloc[0]
+                                        data_count = location_result['data_count'].iloc[0]
                                         
-                #                         else:
-                #                             # Text search filter
-                #                             search_term = st.text_input(
-                #                                 f"Search in {filter_col}:", 
-                #                                 key=f"search_{filter_col}_{i}",
-                #                                 help="Use % as wildcard (e.g., 'Jakarta%' for starts with Jakarta)"
-                #                             )
-                #                             if search_term:
-                #                                 filters[filter_col] = {'search': search_term, 'type': 'text'}
-                                
-                #                 else:
-                #                     st.warning(f"Could not load values for {filter_col}")
-                                
-                #                 st.markdown("---")
+                                        # Validate data exists
+                                        validation_query = f"SELECT COUNT(*) as count FROM \"{schema}\".\"{table}\" WHERE wadmkk = '{regency}'"
+                                        validation_result, _ = db.execute_query(validation_query)
+                                        
+                                        if validation_result is not None and validation_result['count'].iloc[0] > 0:
+                                            st.success(f"✅ Location validated! Area: {regency}, {province}")
+                                            st.info(f"📊 Available data: {data_count:,} points")
+                                            
+                                            filters['location_search'] = {
+                                                'lat': map_lat, 
+                                                'lon': map_lon,
+                                                'regency': regency
+                                            }
+                                        else:
+                                            st.error("❌ No data for this area. Please select a different location.")
+                                    else:
+                                        st.error("❌ Could not find nearby areas. Please select a location in Indonesia.")
+                                        
+                            except Exception as e:
+                                st.error(f"❌ Error: {str(e)}")
+                        else:
+                            st.warning("⚠️ Please click on the map first.")
+                
+                # Show optional filters if location is validated
+                if 'location_search' in filters:
+                    regency = filters['location_search']['regency']
+                    st.markdown("#### 🔍 **Optional Filters**")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    # Kondisi Wilayah Sekitar
+                    with col1:
+                        kondisi_query = f"SELECT DISTINCT kondisi_wilayah_sekitar FROM \"{schema}\".\"{table}\" WHERE kondisi_wilayah_sekitar IS NOT NULL AND wadmkk = '{regency}' ORDER BY kondisi_wilayah_sekitar"
+                        kondisi_df, _ = db.execute_query(kondisi_query)
+                        kondisi_values = kondisi_df['kondisi_wilayah_sekitar'].tolist() if kondisi_df is not None else []
                         
-                #         # Clear all filters button
-                #         if st.button("🗑️ Clear All Filters", use_container_width=True, key="clear_all_filters_flexible"):
-                #             st.session_state.filter_steps = []
-                #             st.rerun()
+                        if kondisi_values:
+                            selected_kondisi = st.multiselect("Kondisi Wilayah:", kondisi_values, default=kondisi_values)
+                            if len(selected_kondisi) < len(kondisi_values):
+                                filters['kondisi_wilayah_sekitar'] = selected_kondisi
                     
-                #     else:
-                #         st.info("No filters applied. Use the dropdown above to add filters.")
-                
-                # st.markdown('</div>', unsafe_allow_html=True)
-                
-                # Get Data button
-                st.markdown("### 🚀 **Load Data**")
-                
-                # col1, col2, col3 = st.columns([2, 1, 1])
-                
-                # with col1:
-                if st.button("🎯 Get Data", type="primary", use_container_width=True):
-                    # Build the SQL query
-                    schema = st.session_state.get('schema', 'public')
+                    # Luas Tanah
+                    with col2:
+                        luas_query = f"SELECT MIN(CAST(\"luas_tanah\" AS FLOAT)) as min_luas, MAX(CAST(\"luas_tanah\" AS FLOAT)) as max_luas FROM \"{schema}\".\"{table}\" WHERE \"luas_tanah\" IS NOT NULL AND CAST(\"luas_tanah\" AS FLOAT) > 0 AND wadmkk = '{regency}'"
+                        luas_result, _ = db.execute_query(luas_query)
+                        if luas_result is not None and len(luas_result) > 0:
+                            min_luas = float(luas_result['min_luas'].iloc[0])
+                            max_luas = float(luas_result['max_luas'].iloc[0])
+                            
+                            luas_range = st.slider("Luas Tanah (m²):", min_value=min_luas, max_value=max_luas, value=(min_luas, max_luas), step=10.0)
+                            if luas_range != (min_luas, max_luas):
+                                filters['luas_tanah'] = {'min': luas_range[0], 'max': luas_range[1], 'type': 'range'}
                     
-                    # Build SELECT clause
-                    select_columns = ', '.join([f'"{col}"' for col in selected_columns])
-                    query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
-                    
-                    # Build WHERE clause
-                    where_conditions = []
-                    
-                    for col, filter_val in filters.items():
-                        if isinstance(filter_val, list):  # Categorical filter
-                            if filter_val:  # Only add condition if values are selected
-                                values_str = "', '".join([str(v) for v in filter_val])
-                                where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                        
-                        elif isinstance(filter_val, dict):
-                            if filter_val.get('type') == 'range':
-                                where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                            elif filter_val.get('type') == 'text':
-                                where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
-                    
-                    if where_conditions:
-                        query += ' WHERE ' + ' AND '.join(where_conditions)
-                    
-                    # Add limit for performance
-                    query += ' LIMIT 100000'
-                    
-                    # Execute query
-                    with st.spinner("Loading data..."):
-                        result_df, message = st.session_state.db_connection.execute_query(query)
-                    
-                    if result_df is not None:
-                        st.session_state.current_data = result_df
-                        st.session_state.applied_filters = filters
-                        
-                        st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
-                        
-                        # Show data preview
-                        st.markdown("**Data Preview:**")
-                        st.dataframe(result_df.head(10), use_container_width=True)
-                        
-                        # Show summary statistics
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Total Rows", f"{len(result_df):,}")
-                        with col2:
-                            st.metric("Total Columns", len(result_df.columns))
-                        with col3:
-                            numeric_cols = len(result_df.select_dtypes(include=[np.number]).columns)
-                            st.metric("Numeric Columns", numeric_cols)
-                        with col4:
-                            missing_pct = (result_df.isnull().sum().sum() / (result_df.shape[0] * result_df.shape[1]) * 100)
-                            st.metric("Data Completeness", f"{100-missing_pct:.1f}%")
-                    
-                    else:
-                        st.error(f"Failed to load data: {message}")
-                
-                # with col2:
-                st.write("")
-                if st.button("🔄 Reset Filters", use_container_width=True):
-                    st.session_state.applied_filters = {}
-                    st.rerun()
-                
-                # with col3:
-                st.write("")
-                if st.button("📊 Show Query", use_container_width=True):
-                    # Show the generated query
-                    schema = st.session_state.get('schema', 'public')
-                    select_columns = ', '.join([f'"{col}"' for col in selected_columns])
-                    query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
-                    
-                    where_conditions = []
-                    for col, filter_val in filters.items():
-                        if isinstance(filter_val, list) and filter_val:
-                            values_str = "', '".join([str(v) for v in filter_val])
-                            where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                        elif isinstance(filter_val, dict):
-                            if filter_val.get('type') == 'range':
-                                where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                            elif filter_val.get('type') == 'text':
-                                where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
-                    
-                    if where_conditions:
-                        query += ' WHERE ' + ' AND '.join(where_conditions)
-                    
-                    st.code(query, language="sql")
-                
-                # Show applied filters summary
-                if filters:
-                    st.markdown("**Applied Filters:**")
-                    for col, filter_val in filters.items():
-                        if isinstance(filter_val, list):
-                            st.write(f"• `{col}`: {len(filter_val)} selected values")
-                        elif isinstance(filter_val, dict):
-                            if filter_val.get('type') == 'range':
-                                st.write(f"• `{col}`: {filter_val['min']} - {filter_val['max']}")
-                            elif filter_val.get('type') == 'text':
-                                st.write(f"• `{col}`: contains '{filter_val['search']}'")
+                    # HPM
+                    with col3:
+                        hpm_query = f"SELECT MIN(CAST(\"hpm\" AS FLOAT)) as min_hpm, MAX(CAST(\"hpm\" AS FLOAT)) as max_hpm FROM \"{schema}\".\"{table}\" WHERE \"hpm\" IS NOT NULL AND CAST(\"hpm\" AS FLOAT) > 0 AND wadmkk = '{regency}'"
+                        hpm_result, _ = db.execute_query(hpm_query)
+                        if hpm_result is not None and len(hpm_result) > 0:
+                            min_hpm = float(hpm_result['min_hpm'].iloc[0])
+                            max_hpm = float(hpm_result['max_hpm'].iloc[0])
+                            
+                            hpm_range = st.slider("HPM (Price/m²):", min_value=min_hpm, max_value=max_hpm, value=(min_hpm, max_hpm), step=1000.0)
+                            if hpm_range != (min_hpm, max_hpm):
+                                filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
 
+        else:
+            # Other tables - simple province selection
+            selected_columns = available_columns
+            filters = {}
+            
+            db = st.session_state.db_connection
+            schema = st.session_state.get('schema', 'public')
+            table = st.session_state.selected_table
+            
+            province_values, _ = db.get_column_unique_values(table, 'wadmpr', schema)
+            if province_values:
+                selected_province = st.selectbox("Select Province:", [""] + province_values)
+                if selected_province:
+                    filters['wadmpr'] = [selected_province]
+
+        # Load Data button and execution
+        st.markdown("### 🚀 **Load Data**")
+        
+        if st.button("🎯 Get Data", type="primary", use_container_width=True):
+            if not filters:
+                st.warning("⚠️ Please apply at least one filter")
+                return
+                
+            # Build query
+            schema = st.session_state.get('schema', 'public')
+            select_columns_str = ', '.join([f'"{col}"' for col in selected_columns])
+            
+            # Special handling for map-based search
+            if 'location_search' in filters:
+                location_info = filters['location_search']
+                user_lat = location_info['lat']
+                user_lon = location_info['lon']
+                user_regency = location_info['regency']
+                
+                query = f"""
+                SELECT {select_columns_str},
+                       ST_Distance(
+                           ST_Point(CAST("longitude" AS FLOAT), CAST("latitude" AS FLOAT)),
+                           ST_Point({user_lon}, {user_lat})
+                       ) as distance_meters
+                FROM "{schema}"."{table}"
+                WHERE "latitude" IS NOT NULL 
+                AND "longitude" IS NOT NULL
+                AND "wadmkk" = '{user_regency}'
+                """
+                
+                # Add optional filters
+                if 'kondisi_wilayah_sekitar' in filters:
+                    kondisi_values = "', '".join(filters['kondisi_wilayah_sekitar'])
+                    query += f" AND \"kondisi_wilayah_sekitar\" IN ('{kondisi_values}')"
+                
+                if 'luas_tanah' in filters and filters['luas_tanah'].get('type') == 'range':
+                    luas_filter = filters['luas_tanah']
+                    query += f" AND CAST(\"luas_tanah\" AS FLOAT) BETWEEN {luas_filter['min']} AND {luas_filter['max']}"
+                
+                if 'hpm' in filters and filters['hpm'].get('type') == 'range':
+                    hpm_filter = filters['hpm']
+                    query += f" AND CAST(\"hpm\" AS FLOAT) BETWEEN {hpm_filter['min']} AND {hpm_filter['max']}"
+                
+                query += " ORDER BY distance_meters ASC LIMIT 300"
+            
+            else:
+                # Standard query
+                query = f'SELECT {select_columns_str} FROM "{schema}"."{table}"'
+                
+                where_conditions = []
+                for col, filter_val in filters.items():
+                    if isinstance(filter_val, list) and filter_val:
+                        values_str = "', '".join([str(v) for v in filter_val])
+                        where_conditions.append(f'"{col}" IN (\'{values_str}\')')
+                
+                if where_conditions:
+                    query += ' WHERE ' + ' AND '.join(where_conditions)
+                
+                query += ' LIMIT 100000'
+            
+            # Execute query
+            with st.spinner("Loading data..."):
+                result_df, message = st.session_state.db_connection.execute_query(query)
+            
+            if result_df is not None:
+                st.session_state.current_data = result_df
+                st.session_state.applied_filters = filters
+                
+                if 'location_search' in filters:
+                    st.success(f"✅ Found {len(result_df):,} nearest properties (limited to 300)!")
+                    if 'distance_meters' in result_df.columns:
+                        min_dist = result_df['distance_meters'].min()
+                        max_dist = result_df['distance_meters'].max()
+                        st.info(f"📏 Distance range: {min_dist:.0f}m - {max_dist:.0f}m")
+                else:
+                    st.success(f"✅ Data loaded! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
+                
+                # Show preview
+                st.dataframe(result_df.head(5), use_container_width=True)
+            else:
+                st.error(f"Failed to load data: {message}")
+
+        # Reset and utility buttons
+        col1, col2 = st.columns(2)
+        with col1:
+            if st.button("🔄 Reset", use_container_width=True):
+                st.session_state.applied_filters = {}
+                if 'selected_coordinates' in st.session_state:
+                    del st.session_state.selected_coordinates
+                st.rerun()
+        
+        with col2:
+            if st.button("📊 Show Query", use_container_width=True):
+                st.info("Query will be shown here when Get Data is clicked")
+
+    # JavaScript to handle map clicks and update input fields
+    st.markdown("""
+    <script>
+    window.addEventListener('message', function(event) {
+        if (event.data.type === 'mapClick') {
+            // Update session state via a hidden form submission or other method
+            console.log('Map clicked:', event.data.lat, event.data.lon);
+        }
+    });
+    </script>
+    """, unsafe_allow_html=True)
+    
 def render_data_chatbot():
     """Render Data Chatbot section"""
     st.markdown('<div class="section-header">💬 RHR AI</div>', unsafe_allow_html=True)
