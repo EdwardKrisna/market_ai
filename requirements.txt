@@ -17,3 +17,5 @@ langchain-openai
 psycopg2-binary
 plotly
 pygwalker
+folium
+streamlit-folium
