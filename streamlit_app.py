@@ -1633,6 +1633,7 @@ def render_data_chatbot():
                                 text += f"<br>Luas Tanah: {row.get('luas_tanah', 'N/A')} m²"
                             if 'kondisi_wilayah_sekitar' in map_df.columns:
                                 text += f"<br>Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}"
+                            hover_text.append(text)  # <- ADD THIS LINE
 
                         fig.add_trace(go.Scattermapbox(
                             lat=map_df[lat_col],
