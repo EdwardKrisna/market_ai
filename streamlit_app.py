@@ -709,7 +709,7 @@ def render_point_based_filtering(db, schema, table):
                 key="point_max_luas"
             )
         
-        if min_luas > 0 or max_luas != 10000.0:
+        if min_luas > 0 or max_luas < 10000.0:
             luas_range = (min_luas, max_luas)
         else:
             luas_range = None
@@ -734,7 +734,7 @@ def render_point_based_filtering(db, schema, table):
                 key="point_max_lebar"
             )
         
-        if min_lebar > 0 or max_lebar != 50.0:
+        if min_lebar > 0 or max_lebar < 50.0:
             lebar_range = (min_lebar, max_lebar)
         else:
             lebar_range = None
@@ -1633,7 +1633,7 @@ def render_data_chatbot():
                                 text += f"<br>Luas Tanah: {row.get('luas_tanah', 'N/A')} m²"
                             if 'kondisi_wilayah_sekitar' in map_df.columns:
                                 text += f"<br>Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}"
-                            hover_text.append(text)  # <- ADD THIS LINE
+                            hover_text.append(text)  # ADD THIS LINE
 
                         fig.add_trace(go.Scattermapbox(
                             lat=map_df[lat_col],
