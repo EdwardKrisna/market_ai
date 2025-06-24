@@ -366,8 +366,16 @@ def get_pyg_renderer(df: pd.DataFrame, spec_path: str) -> "StreamlitRenderer":
 def build_spatial_property_query(schema, table, selected_columns, lat, lon, kondisi_wilayah_opt, luas_tanah_range, lebar_jalan_range):
     """Build spatial SQL query with progressive radius expansion"""
     
+    # Add filter columns to selection if not already included
+    filter_columns = ['kondisi_wilayah_sekitar', 'luas_tanah', 'lebar_jalan_di_depan']
+    all_columns = list(selected_columns)
+    
+    for col in filter_columns:
+        if col not in all_columns:
+            all_columns.append(col)
+    
     # Base column selection
-    base_columns = ', '.join([f'"{col}"' for col in selected_columns])
+    base_columns = ', '.join([f'"{col}"' for col in all_columns])
     
     # Define radius levels (in meters)
     radius_levels = [50000, 100000, 200000, 500000]  # 50km, 100km, 200km, 500km
