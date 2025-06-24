@@ -603,35 +603,35 @@ def render_point_based_filtering(db, schema, table):
         tiles="OpenStreetMap"
     )
 
-    # Display map and get click data
+    # Add draggable marker at center
+    marker = folium.Marker(
+        indonesia_center,
+        popup="Drag me to select location",
+        tooltip="Drag this marker to select search location",
+        draggable=True,
+        icon=folium.Icon(color='red', icon='map-pin')
+    )
+    marker.add_to(m)
+
+    # Display map and get marker data
     map_data = st_folium(m, width=700, height=400, key="location_map")
 
-    # Handle map clicks
-    selected_lat = None
-    selected_lon = None
+    # Get coordinates from draggable marker
+    selected_lat = indonesia_center[0]  # Default
+    selected_lon = indonesia_center[1]  # Default
 
-    if map_data['last_clicked']:
-        selected_lat = map_data['last_clicked']['lat']
-        selected_lon = map_data['last_clicked']['lng']
-        
-        # Create new map with marker at clicked location
-        m_with_marker = folium.Map(
-            location=[selected_lat, selected_lon],
-            zoom_start=10,
-            tiles="OpenStreetMap"
-        )
-        
-        # Add marker at clicked location
-        folium.Marker(
-            [selected_lat, selected_lon],
-            popup=f"Selected: {selected_lat:.6f}, {selected_lon:.6f}",
-            tooltip="Search Location",
-            icon=folium.Icon(color='red', icon='map-pin')
-        ).add_to(m_with_marker)
-        
-        # Display updated map
-        st_folium(m_with_marker, width=700, height=300, key="marker_map")
-        st.success(f"📍 Selected coordinates: {selected_lat:.6f}, {selected_lon:.6f}")
+    if map_data['last_object_clicked_tooltip']:
+        # Get coordinates from the dragged marker
+        if 'all_drawings' in map_data and map_data['all_drawings']:
+            for feature in map_data['all_drawings']:
+                if feature['geometry']['type'] == 'Point':
+                    coords = feature['geometry']['coordinates']
+                    selected_lon = coords[0]
+                    selected_lat = coords[1]
+                    break
+
+    # Show current coordinates
+    st.info(f"🎯 Current coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
     
     # Manual coordinate input option
     st.markdown("**Alternative: Manual Coordinate Input**")
