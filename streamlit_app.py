@@ -606,7 +606,7 @@ def render_point_based_filtering(db, schema, table):
     # Display map and get click data
     map_data = st_folium(m, width=700, height=400, key="location_map")
 
-    # Handle map clicks and add marker only when clicked
+    # Handle map clicks
     selected_lat = None
     selected_lon = None
 
@@ -614,14 +614,23 @@ def render_point_based_filtering(db, schema, table):
         selected_lat = map_data['last_clicked']['lat']
         selected_lon = map_data['last_clicked']['lng']
         
+        # Create new map with marker at clicked location
+        m_with_marker = folium.Map(
+            location=[selected_lat, selected_lon],
+            zoom_start=10,
+            tiles="OpenStreetMap"
+        )
+        
         # Add marker at clicked location
         folium.Marker(
             [selected_lat, selected_lon],
             popup=f"Selected: {selected_lat:.6f}, {selected_lon:.6f}",
             tooltip="Search Location",
             icon=folium.Icon(color='red', icon='map-pin')
-        ).add_to(m)
+        ).add_to(m_with_marker)
         
+        # Display updated map
+        st_folium(m_with_marker, width=700, height=300, key="marker_map")
         st.success(f"📍 Selected coordinates: {selected_lat:.6f}, {selected_lon:.6f}")
     
     # Manual coordinate input option
