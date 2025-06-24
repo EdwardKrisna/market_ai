@@ -758,7 +758,7 @@ def load_administrative_data(db, schema, table, filters):
     """Load data using administrative filtering"""
     try:
         # Get mandatory columns
-        mandatory_cols = ['luas_tanah', 'hpm', 'longitude', 'latitude']
+        mandatory_cols = ['luas_tanah', 'kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
         
         # Build SELECT clause
         select_columns = ', '.join([f'"{col}"' for col in mandatory_cols])
@@ -1038,7 +1038,7 @@ def render_data_selection():
             available_columns = st.session_state.table_columns['column_name'].tolist()
 
             if st.session_state.selected_table == 'engineered_property_data':
-                mandatory_cols = ['luas_tanah', 'hpm', 'longitude', 'latitude']
+                mandatory_cols = ['luas_tanah', 'kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
                 user_selectable_cols = [col for col in available_columns if col not in mandatory_cols]
 
                 selected_user_cols = st.multiselect(
@@ -1053,7 +1053,7 @@ def render_data_selection():
                     
                 selected_columns = mandatory_cols + selected_user_cols
 
-                st.info(f"📊 {len(selected_columns)} columns selected (4 mandatory + {len(selected_user_cols)} user-selected)")
+                st.info(f"📊 {len(selected_columns)} columns selected (5 mandatory + {len(selected_user_cols)} user-selected)")
    
             else:
                 selected_columns = available_columns
