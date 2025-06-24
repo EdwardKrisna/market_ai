@@ -614,9 +614,9 @@ def render_point_based_filtering(db, schema, table):
     marker.add_to(m)
 
     # Map container - full width responsive
-    with st.container():
-        map_data = st_folium(m, width=None, height=400, key="location_map")
-        st.markdown("</div>", unsafe_allow_html=True)
+    # with st.container():
+    map_data = st_folium(m, width=None, height=400, key="location_map")
+        # st.markdown("</div>", unsafe_allow_html=True)
 
     # Get coordinates from draggable marker or default
     selected_lat = indonesia_center[0]  # Default
@@ -637,7 +637,7 @@ def render_point_based_filtering(db, schema, table):
                 selected_lon = coords[0]  # longitude first in GeoJSON
                 selected_lat = coords[1]   # latitude second
 
-    # Show current coordinates
+    # Show current coordinates (this will immediately follow the map with no gap)
     st.info(f"🎯 Current coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
     
     # Manual coordinate input option
