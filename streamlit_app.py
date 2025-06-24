@@ -616,19 +616,24 @@ def render_point_based_filtering(db, schema, table):
     # Display map and get marker data
     map_data = st_folium(m, width=700, height=400, key="location_map")
 
-    # Get coordinates from draggable marker
+    # Get coordinates from draggable marker or default
     selected_lat = indonesia_center[0]  # Default
     selected_lon = indonesia_center[1]  # Default
 
-    if map_data['last_object_clicked_tooltip']:
-        # Get coordinates from the dragged marker
-        if 'all_drawings' in map_data and map_data['all_drawings']:
-            for feature in map_data['all_drawings']:
-                if feature['geometry']['type'] == 'Point':
-                    coords = feature['geometry']['coordinates']
-                    selected_lon = coords[0]
-                    selected_lat = coords[1]
-                    break
+    # Check for dragged marker position
+    if map_data and 'last_object_clicked' in map_data and map_data['last_object_clicked']:
+        clicked_data = map_data['last_object_clicked']
+        if 'lat' in clicked_data and 'lng' in clicked_data:
+            selected_lat = clicked_data['lat']
+            selected_lon = clicked_data['lng']
+
+    # Alternative: check all_drawings for marker position
+    elif map_data and 'all_drawings' in map_data and map_data['all_drawings']:
+        for drawing in map_data['all_drawings']:
+            if drawing['geometry']['type'] == 'Point':
+                coords = drawing['geometry']['coordinates']
+                selected_lon = coords[0]  # longitude first in GeoJSON
+                selected_lat = coords[1]   # latitude second
 
     # Show current coordinates
     st.info(f"🎯 Current coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
