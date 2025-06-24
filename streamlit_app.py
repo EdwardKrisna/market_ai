@@ -594,7 +594,7 @@ def render_point_based_filtering(db, schema, table):
     
     # Map for coordinate selection
     st.markdown("**Step 1: Select Location on Map**")
-    
+
     # Create Indonesia-centered map
     indonesia_center = [-2.5, 118.0]  # Center of Indonesia
     m = folium.Map(
@@ -613,11 +613,25 @@ def render_point_based_filtering(db, schema, table):
     )
     marker.add_to(m)
 
-    # Map container - full width responsive
-    # with st.container():
-    map_data = st_folium(m, width=None, height=400, key="location_map")
+    # Put map in a styled box
+    st.markdown("""
+    <div style="
+        border: 2px solid #3498db;
+        border-radius: 10px;
+        padding: 10px;
+        margin: 10px 0;
+        background-color: #f8f9fa;
+        overflow: hidden;
+    ">
+    """, unsafe_allow_html=True)
+
+    # Display map and get marker data
+    map_data = st_folium(m, use_container_width=True, height=400, key="location_map")
+
+    # Close the box
+    st.markdown("</div>", unsafe_allow_html=True)
         # st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
+    # st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
 
     # Get coordinates from draggable marker or default
     selected_lat = indonesia_center[0]  # Default
