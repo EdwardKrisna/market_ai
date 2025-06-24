@@ -613,9 +613,9 @@ def render_point_based_filtering(db, schema, table):
     )
     marker.add_to(m)
 
-    # Display map and get marker data
+    # Map container - full width responsive
     with st.container():
-        map_data = st_folium(m, width=700, height=400, key="location_map")
+        map_data = st_folium(m, use_container_width=True, height=400, key="location_map")
         st.markdown("</div>", unsafe_allow_html=True)
 
     # Get coordinates from draggable marker or default
