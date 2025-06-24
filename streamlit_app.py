@@ -615,6 +615,9 @@ def render_point_based_filtering(db, schema, table):
 
     # Display map and get marker data
     map_data = st_folium(m, width=700, height=400, key="location_map")
+    
+    # Remove extra spacing
+    st.markdown("<div style='margin-top: -20px;'></div>", unsafe_allow_html=True)
 
     # Get coordinates from draggable marker or default
     selected_lat = indonesia_center[0]  # Default
