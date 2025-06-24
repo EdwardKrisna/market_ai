@@ -1558,9 +1558,15 @@ def render_data_chatbot():
                 lon_col = col
         
         if lat_col and lon_col:
-            # Clean and filter valid coordinates
-            map_df = df[[lat_col, lon_col]].copy()
-            map_df = map_df.dropna()
+            # Clean and filter valid coordinates - include additional columns
+            additional_cols = []
+            if 'luas_tanah' in df.columns:
+                additional_cols.append('luas_tanah')
+            if 'kondisi_wilayah_sekitar' in df.columns:
+                additional_cols.append('kondisi_wilayah_sekitar')
+
+            map_df = df[[lat_col, lon_col] + additional_cols].copy()
+            map_df = map_df.dropna(subset=[lat_col, lon_col])  # Only drop rows with missing coordinates
             
             # Convert to numeric first
             try:
