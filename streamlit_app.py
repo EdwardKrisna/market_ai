@@ -786,20 +786,18 @@ def render_data_selection():
                                 tiles='OpenStreetMap'
                             )
                             
-                            # Add marker if point is selected
+                            # Add draggable marker if point is selected
                             if st.session_state.map_selected_point:
                                 lat, lon = st.session_state.map_selected_point
                                 folium.Marker(
                                     [lat, lon],
                                     popup=f"Selected Location<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}",
-                                    tooltip="Click to see coordinates",
+                                    tooltip="Drag me to move location!",
+                                    draggable=True,
                                     icon=folium.Icon(color='red', icon='info-sign')
                                 ).add_to(m)
                             
-                            # Add click functionality instructions
-                            folium.LatLngPopup().add_to(m)
-                            
-                            # Display the map and capture click data
+                            # Display the map and capture interaction data
                             map_data = st_folium(
                                 m, 
                                 center=None,
@@ -807,53 +805,86 @@ def render_data_selection():
                                 key="location_selector",
                                 height=400,
                                 width=700,
-                                returned_objects=["last_object_clicked"]
+                                returned_objects=["last_object_clicked", "last_clicked", "all_drawings"]
                             )
                             
-                            # Process map click
-                            if map_data['last_object_clicked'] is not None:
-                                clicked_lat = map_data['last_object_clicked']['lat']
-                                clicked_lon = map_data['last_object_clicked']['lng']
+                            # Process map interactions
+                            coordinates_updated = False
+                            
+                            # Check for marker drag (when marker exists and is moved)
+                            if st.session_state.map_selected_point and map_data['last_object_clicked']:
+                                if map_data['last_object_clicked'].get('lat') and map_data['last_object_clicked'].get('lng'):
+                                    new_lat = map_data['last_object_clicked']['lat']
+                                    new_lon = map_data['last_object_clicked']['lng']
+                                    
+                                    # Update if coordinates changed
+                                    if (new_lat, new_lon) != st.session_state.map_selected_point:
+                                        st.session_state.map_selected_point = (new_lat, new_lon)
+                                        coordinates_updated = True
+                            
+                            # Check for map click (when no marker exists or clicking empty area)
+                            elif map_data['last_clicked'] and map_data['last_clicked'].get('lat'):
+                                clicked_lat = map_data['last_clicked']['lat']
+                                clicked_lon = map_data['last_clicked']['lng']
                                 
-                                # Update session state with clicked coordinates
+                                # Set new point if coordinates are different
                                 if (clicked_lat, clicked_lon) != st.session_state.map_selected_point:
                                     st.session_state.map_selected_point = (clicked_lat, clicked_lon)
-                                    st.rerun()
+                                    coordinates_updated = True
+                            
+                            # Rerun if coordinates were updated
+                            if coordinates_updated:
+                                st.rerun()
                             
                             # Instructions
-                            st.info("💡 Click anywhere on the map to select your target location. The red marker will show your selected point.")
+                            if st.session_state.map_selected_point:
+                                st.info("💡 Drag the red marker to adjust the location, or click elsewhere on the map to place a new point.")
+                            else:
+                                st.info("💡 Click anywhere on the map to select your target location.")
                         
                         with col2:
                             st.markdown("**Manual Coordinate Input:**")
+                            
+                            # Get current coordinates for default values
+                            current_lat = -6.2088 if not st.session_state.map_selected_point else st.session_state.map_selected_point[0]
+                            current_lon = 106.8456 if not st.session_state.map_selected_point else st.session_state.map_selected_point[1]
                             
                             # Manual coordinate input as backup
                             manual_lat = st.number_input(
                                 "Latitude:",
                                 min_value=-90.0,
                                 max_value=90.0,
-                                value=-6.2088 if not st.session_state.map_selected_point else st.session_state.map_selected_point[0],
+                                value=current_lat,
                                 step=0.000001,
                                 format="%.6f",
-                                help="Enter latitude coordinate"
+                                help="Enter latitude coordinate",
+                                key=f"manual_lat_{current_lat}"  # Key changes when map updates
                             )
                             
                             manual_lon = st.number_input(
                                 "Longitude:",
                                 min_value=-180.0,
                                 max_value=180.0,
-                                value=106.8456 if not st.session_state.map_selected_point else st.session_state.map_selected_point[1],
+                                value=current_lon,
                                 step=0.000001,
                                 format="%.6f",
-                                help="Enter longitude coordinate"
+                                help="Enter longitude coordinate",
+                                key=f"manual_lon_{current_lon}"  # Key changes when map updates
                             )
                             
                             if st.button("📍 Use These Coordinates", use_container_width=True):
-                                st.session_state.map_selected_point = (manual_lat, manual_lon)
-                                st.rerun()
+                                if (manual_lat, manual_lon) != st.session_state.map_selected_point:
+                                    st.session_state.map_selected_point = (manual_lat, manual_lon)
+                                    st.rerun()
                             
                             if st.button("🔄 Clear Selection", use_container_width=True):
                                 st.session_state.map_selected_point = None
                                 st.rerun()
+                            
+                            # Show current selection
+                            if st.session_state.map_selected_point:
+                                lat, lon = st.session_state.map_selected_point
+                                st.success(f"📍 Current: {lat:.6f}, {lon:.6f}")
                         
                         # Show selected coordinates
                         if st.session_state.map_selected_point:
