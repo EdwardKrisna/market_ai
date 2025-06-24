@@ -606,7 +606,7 @@ def render_point_based_filtering(db, schema, table):
     # Add draggable marker at center
     marker = folium.Marker(
         indonesia_center,
-        popup="Drag me to select location",
+        popup="Dont forget to click me!",
         tooltip="Drag this marker to select search location",
         draggable=True,
         icon=folium.Icon(color='red', icon='map-pin')
@@ -691,43 +691,51 @@ def render_point_based_filtering(db, schema, table):
     
     with col2:
         st.markdown("**Luas Tanah (m²):**")
-        # Get min/max for luas_tanah
-        luas_query = f'SELECT MIN("luas_tanah") as min_val, MAX("luas_tanah") as max_val FROM "{schema}"."{table}" WHERE "luas_tanah" IS NOT NULL'
-        luas_result, _ = db.execute_query(luas_query)
-        
-        if luas_result is not None and len(luas_result) > 0:
-            min_luas = float(luas_result['min_val'].iloc[0])
-            max_luas = float(luas_result['max_val'].iloc[0])
-            
-            luas_range = st.slider(
-                "Luas tanah range:",
-                min_value=min_luas,
-                max_value=max_luas,
-                value=(min_luas, max_luas),
-                help="Filter by land area",
-                key="point_luas"
+        col2a, col2b = st.columns(2)
+        with col2a:
+            min_luas = st.number_input(
+                "Min Luas:",
+                min_value=0.0,
+                value=0.0,
+                step=10.0,
+                key="point_min_luas"
             )
+        with col2b:
+            max_luas = st.number_input(
+                "Max Luas:",
+                min_value=0.0,
+                value=10000.0,
+                step=10.0,
+                key="point_max_luas"
+            )
+        
+        if min_luas > 0 or max_luas != 10000.0:
+            luas_range = (min_luas, max_luas)
         else:
             luas_range = None
-    
+
     with col3:
         st.markdown("**Lebar Jalan di Depan (m):**")
-        # Get min/max for lebar_jalan_di_depan
-        lebar_query = f'SELECT MIN("lebar_jalan_di_depan") as min_val, MAX("lebar_jalan_di_depan") as max_val FROM "{schema}"."{table}" WHERE "lebar_jalan_di_depan" IS NOT NULL'
-        lebar_result, _ = db.execute_query(lebar_query)
-        
-        if lebar_result is not None and len(lebar_result) > 0:
-            min_lebar = float(lebar_result['min_val'].iloc[0])
-            max_lebar = float(lebar_result['max_val'].iloc[0])
-            
-            lebar_range = st.slider(
-                "Lebar jalan range:",
-                min_value=min_lebar,
-                max_value=max_lebar,
-                value=(min_lebar, max_lebar),
-                help="Filter by road width in front",
-                key="point_lebar"
+        col3a, col3b = st.columns(2)
+        with col3a:
+            min_lebar = st.number_input(
+                "Min Lebar:",
+                min_value=0.0,
+                value=0.0,
+                step=0.5,
+                key="point_min_lebar"
             )
+        with col3b:
+            max_lebar = st.number_input(
+                "Max Lebar:",
+                min_value=0.0,
+                value=50.0,
+                step=0.5,
+                key="point_max_lebar"
+            )
+        
+        if min_lebar > 0 or max_lebar != 50.0:
+            lebar_range = (min_lebar, max_lebar)
         else:
             lebar_range = None
     
