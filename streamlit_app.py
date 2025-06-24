@@ -1090,7 +1090,7 @@ def render_data_selection():
                     
                     else:
                         st.error(f"Failed to load data: {message}")
-
+                        
 def render_data_chatbot():
     """Render Data Chatbot section"""
     st.markdown('<div class="section-header">💬 RHR AI</div>', unsafe_allow_html=True)
