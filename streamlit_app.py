@@ -387,15 +387,21 @@ def build_spatial_property_query(schema, table, selected_columns, lat, lon, kond
                 {base_columns},
                 ST_Distance(
                     ST_GeogFromText('POINT({lon} {lat})'),
-                    ST_GeogFromText('POINT(' || longitude || ' ' || latitude || ')')
+                    ST_GeogFromText('POINT(' || CAST(longitude AS TEXT) || ' ' || CAST(latitude AS TEXT) || ')')
                 ) as distance_m
             FROM "{schema}"."{table}"
             WHERE 
                 longitude IS NOT NULL 
                 AND latitude IS NOT NULL
+                AND longitude != 0
+                AND latitude != 0
+                AND longitude != ''
+                AND latitude != ''
+                AND CAST(longitude AS TEXT) ~ '^-?[0-9]+\.?[0-9]*
+                AND CAST(latitude AS TEXT) ~ '^-?[0-9]+\.?[0-9]*
                 AND ST_DWithin(
                     ST_GeogFromText('POINT({lon} {lat})'),
-                    ST_GeogFromText('POINT(' || longitude || ' ' || latitude || ')'),
+                    ST_GeogFromText('POINT(' || CAST(longitude AS TEXT) || ' ' || CAST(latitude AS TEXT) || ')'),
                     {radius}
                 )
         ),
