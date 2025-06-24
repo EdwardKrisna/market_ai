@@ -602,19 +602,11 @@ def render_point_based_filtering(db, schema, table):
         zoom_start=5,
         tiles="OpenStreetMap"
     )
-    
-    # Add instruction marker
-    folium.Marker(
-        indonesia_center,
-        popup="Click anywhere on the map to select a location",
-        tooltip="Indonesia Center - Click to select location",
-        icon=folium.Icon(color='blue', icon='info-sign')
-    ).add_to(m)
-    
+
     # Display map and get click data
     map_data = st_folium(m, width=700, height=400, key="location_map")
-    
-    # Handle map clicks
+
+    # Handle map clicks and add marker only when clicked
     selected_lat = None
     selected_lon = None
 
