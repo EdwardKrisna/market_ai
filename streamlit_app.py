@@ -1599,6 +1599,16 @@ def render_data_chatbot():
                     fig = go.Figure()
                     
                     if value_col and value_col in map_df.columns:
+                        # Enhanced hover text for colored markers
+                        enhanced_text = []
+                        for idx, row in map_df.iterrows():
+                            text = f"{value_col}: {row[value_col]:,.0f}"
+                            if 'luas_tanah' in map_df.columns:
+                                text += f"<br>Luas Tanah: {row.get('luas_tanah', 'N/A')} m²"
+                            if 'kondisi_wilayah_sekitar' in map_df.columns:
+                                text += f"<br>Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}"
+                            enhanced_text.append(text)
+                        
                         # Colored markers based on value
                         fig.add_trace(go.Scattermapbox(
                             lat=map_df[lat_col],
@@ -1611,18 +1621,26 @@ def render_data_chatbot():
                                 showscale=True,
                                 colorbar=dict(title=value_col)
                             ),
-                            text=[f"{value_col}: {val:,.0f}" for val in map_df[value_col]],
+                            text=enhanced_text,
                             hovertemplate='<b>%{text}</b><br>Lat: %{lat}<br>Lon: %{lon}<extra></extra>',
                             name='Properties'
                         ))
                     else:
-                        # Simple markers
+                        hover_text = []
+                        for idx, row in map_df.iterrows():
+                            text = f"Lat: {row[lat_col]}<br>Lon: {row[lon_col]}"
+                            if 'luas_tanah' in map_df.columns:
+                                text += f"<br>Luas Tanah: {row.get('luas_tanah', 'N/A')} m²"
+                            if 'kondisi_wilayah_sekitar' in map_df.columns:
+                                text += f"<br>Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}"
+
                         fig.add_trace(go.Scattermapbox(
                             lat=map_df[lat_col],
                             lon=map_df[lon_col],
                             mode='markers',
                             marker=dict(size=8, color='blue'),
-                            hovertemplate='Lat: %{lat}<br>Lon: %{lon}<extra></extra>',
+                            text=hover_text,
+                            hovertemplate='%{text}<extra></extra>',
                             name='Properties'
                         ))
                     
