@@ -594,7 +594,7 @@ def render_point_based_filtering(db, schema, table):
     
     # Map for coordinate selection
     st.markdown("**Step 1: Select Location on Map**")
-
+    
     # Create Indonesia-centered map
     indonesia_center = [-2.5, 118.0]  # Center of Indonesia
     m = folium.Map(
@@ -613,58 +613,11 @@ def render_point_based_filtering(db, schema, table):
     )
     marker.add_to(m)
 
-    # Put map AND coordinates in the same styled box
-    st.markdown("""
-    <div style="
-        border: 2px solid #3498db;
-        border-radius: 10px;
-        padding: 10px;
-        margin: 10px 0;
-        background-color: #f8f9fa;
-        overflow: hidden;
-    ">
-    """, unsafe_allow_html=True)
-
-    # Display map and get marker data
-    map_data = st_folium(m, use_container_width=True, height=400, key="location_map")
-
-    # Get coordinates from draggable marker or default
-    selected_lat = indonesia_center[0]  # Default
-    selected_lon = indonesia_center[1]  # Default
-
-    # Check for dragged marker position
-    if map_data and 'last_object_clicked' in map_data and map_data['last_object_clicked']:
-        clicked_data = map_data['last_object_clicked']
-        if 'lat' in clicked_data and 'lng' in clicked_data:
-            selected_lat = clicked_data['lat']
-            selected_lon = clicked_data['lng']
-
-    # Alternative: check all_drawings for marker position
-    elif map_data and 'all_drawings' in map_data and map_data['all_drawings']:
-        for drawing in map_data['all_drawings']:
-            if drawing['geometry']['type'] == 'Point':
-                coords = drawing['geometry']['coordinates']
-                selected_lon = coords[0]  # longitude first in GeoJSON
-                selected_lat = coords[1]   # latitude second
-
-    # Show current coordinates INSIDE the same box
-    st.markdown(f"""
-    <div style="
-        background-color: #e3f2fd;
-        padding: 8px;
-        border-radius: 5px;
-        margin-top: 10px;
-        text-align: center;
-        font-weight: bold;
-    ">
-    🎯 Current coordinates: {selected_lat:.6f}, {selected_lon:.6f}
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Close the main box
-    st.markdown("</div>", unsafe_allow_html=True)
+    # Map container - full width responsive
+    # with st.container():
+    map_data = st_folium(m, width=None, height=400, key="location_map")
         # st.markdown("</div>", unsafe_allow_html=True)
-    # st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
+    st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
 
     # Get coordinates from draggable marker or default
     selected_lat = indonesia_center[0]  # Default
