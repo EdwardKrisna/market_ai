@@ -360,6 +360,529 @@ def render_database_connection():
     else:
         st.markdown('<div class="info-box">🔴 Belum Ada Koneksi ke Database</div>', unsafe_allow_html=True)
 
+def build_property_query(lat, lon, luas_tanah_range=None, lebar_jalan_range=None, kondisi_wilayah_opt=None, schema='public', table='engineered_property_data'):
+    """
+    Build SQL query for property search based on coordinates and filters
+    """
+    base_query = f"""
+    SELECT *,
+           ST_Distance(
+               ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)::geography,
+               geometry::geography
+           ) as distance_meters
+    FROM "{schema}"."{table}"
+    WHERE 1=1
+    """
+    
+    conditions = []
+    
+    # Add luas_tanah filter
+    if luas_tanah_range:
+        min_luas, max_luas = luas_tanah_range
+        conditions.append(f'"luas_tanah" BETWEEN {min_luas} AND {max_luas}')
+    
+    # Add lebar_jalan filter  
+    if lebar_jalan_range:
+        min_lebar, max_lebar = lebar_jalan_range
+        conditions.append(f'"lebar_jalan_di_depan" BETWEEN {min_lebar} AND {max_lebar}')
+    
+    # Add kondisi_wilayah filter
+    if kondisi_wilayah_opt and len(kondisi_wilayah_opt) > 0:
+        kondisi_values = "', '".join(kondisi_wilayah_opt)
+        conditions.append(f'"kondisi_wilayah_sekitar" IN (\'{kondisi_values}\')')
+    
+    # Add conditions to query
+    if conditions:
+        base_query += " AND " + " AND ".join(conditions)
+    
+    # Order by distance and limit to 300
+    base_query += " ORDER BY distance_meters LIMIT 300"
+    
+    return base_query
+
+def render_land_market_filtering():
+    """Enhanced filtering for Land Market with two options"""
+    
+    if st.session_state.selected_table != 'engineered_property_data':
+        return
+    
+    st.markdown("### 🔍 **Data Selection Method**")
+    
+    # Filter method selection
+    filter_method = st.radio(
+        "Choose your filtering method:",
+        ["📍 Administrative Area Filtering", "🗺️ Point-Based Location Search"],
+        help="Select how you want to filter the land market data"
+    )
+    
+    db = st.session_state.db_connection
+    schema = st.session_state.get('schema', 'public')
+    table = st.session_state.selected_table
+    
+    if filter_method == "📍 Administrative Area Filtering":
+        # Original administrative filtering (wadmkc method)
+        render_administrative_filtering(db, schema, table)
+    
+    else:
+        # New point-based filtering
+        render_point_based_filtering(db, schema, table)
+
+def render_administrative_filtering(db, schema, table):
+    """Original administrative area filtering"""
+    st.markdown("#### 🎯 **Administrative Area Filtering**")
+    
+    # Province (Required)
+    st.markdown("**Required: Select Province/Region**")
+    with st.spinner("Loading province options..."):
+        province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
+
+    if province_values:
+        selected_province = st.selectbox(
+            "Choose a Province/Region:",
+            [""] + province_values,
+            help="You must select a province/region to continue",
+            key="admin_province"
+        )
+        if not selected_province:
+            st.error("❌ Please select a province/region to continue")
+            return
+    else:
+        st.error(f"Could not load provinces: {province_msg}")
+        return
+
+    # Regency/City (Required)
+    st.markdown("**Required: Select Regency/City**")
+    with st.spinner("Loading regency/city options..."):
+        regency_query = f'''
+            SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
+            WHERE wadmpr = '{selected_province}'
+            ORDER BY wadmkk
+        '''
+        regency_df, _ = db.execute_query(regency_query)
+        regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
+
+    if regency_values:
+        selected_regency = st.selectbox(
+            "Choose a Regency/City:",
+            [""] + regency_values,
+            help="You must select a regency/city to continue",
+            key="admin_regency"
+        )
+        if not selected_regency:
+            st.error("❌ Please select a regency/city to continue")
+            return
+    else:
+        st.error("No regency/city found for the selected province.")
+        return
+
+    # District (Required)
+    st.markdown("**Required: Select District**")
+    with st.spinner("Loading district options..."):
+        district_query = f'''
+            SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
+            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
+            ORDER BY wadmkc
+        '''
+        district_df, _ = db.execute_query(district_query)
+        district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
+
+    if district_values:
+        selected_district = st.selectbox(
+            "Choose a District:",
+            [""] + district_values,
+            help="You must select a district to continue",
+            key="admin_district"
+        )
+        if not selected_district:
+            st.error("❌ Please select a district to continue")
+            return
+    else:
+        st.error("No district found for the selected regency/city.")
+        return
+
+    # Subdistrict (Optional)
+    st.markdown("**Optional: Select Subdistrict**")
+    with st.spinner("Loading subdistrict options..."):
+        subdistrict_query = f'''
+            SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
+            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
+            ORDER BY wadmkd
+        '''
+        subdistrict_df, _ = db.execute_query(subdistrict_query)
+        subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
+
+    selected_subdistrict = st.selectbox(
+        "Choose a Subdistrict (optional):",
+        [""] + subdistrict_values,
+        key="admin_subdistrict"
+    )
+
+    # Build filters
+    filters = {}
+    filters['wadmpr'] = [selected_province]
+    if selected_regency:
+        filters['wadmkk'] = [selected_regency]
+    if selected_district:
+        filters['wadmkc'] = [selected_district]
+    if selected_subdistrict:
+        filters['wadmkd'] = [selected_subdistrict]
+
+    # Additional filters (Year and HPM)
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.markdown("**Filter by Year:**")
+        area_where_parts = []
+        for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
+            if filters.get(key):
+                area_where_parts.append(f'"{key}" = \'{filters[key][0]}\'')
+        area_where_clause = " AND ".join(area_where_parts)
+        
+        years_query = f"""
+            SELECT DISTINCT tahun_pengambilan_data 
+            FROM "{schema}"."{table}"
+            WHERE {area_where_clause}
+            ORDER BY tahun_pengambilan_data
+        """
+        years_df, _ = db.execute_query(years_query)
+        year_values = years_df['tahun_pengambilan_data'].dropna().tolist() if years_df is not None else []
+
+        if year_values:
+            selected_years = st.multiselect(
+                "Select years:",
+                year_values,
+                default=year_values,
+                help="Choose which years to include in analysis",
+                key="admin_years"
+            )
+            if len(selected_years) < len(year_values):
+                filters['tahun_pengambilan_data'] = selected_years
+
+    with col2:
+        st.markdown("**Filter by HPM (Price Range):**")
+        hpm_query = f"""
+            SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
+            FROM "{schema}"."{table}"
+            WHERE {area_where_clause} AND "hpm" IS NOT NULL
+        """
+        hpm_result, _ = db.execute_query(hpm_query)
+        if hpm_result is not None and len(hpm_result) > 0:
+            min_hpm = float(hpm_result['min_hpm'].iloc[0])
+            max_hpm = float(hpm_result['max_hpm'].iloc[0])
+
+            st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
+
+            hpm_range = st.slider(
+                "Select HPM range:",
+                min_value=min_hpm,
+                max_value=max_hpm,
+                value=(min_hpm, max_hpm),
+                step=1000.0,
+                help="Filter properties by price per square meter",
+                key="admin_hpm"
+            )
+            if hpm_range != (min_hpm, max_hpm):
+                filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
+
+    # Load data button for administrative filtering
+    if st.button("🎯 Get Data", type="primary", use_container_width=True, key="admin_get_data"):
+        load_administrative_data(db, schema, table, filters)
+
+def render_point_based_filtering(db, schema, table):
+    """New point-based location filtering"""
+    st.markdown("#### 🗺️ **Point-Based Location Search**")
+    
+    # Map for coordinate selection
+    st.markdown("**Step 1: Select Location on Map**")
+    
+    # Create Indonesia-centered map
+    indonesia_center = [-2.5, 118.0]  # Center of Indonesia
+    m = folium.Map(
+        location=indonesia_center,
+        zoom_start=5,
+        tiles="OpenStreetMap"
+    )
+    
+    # Add marker instruction
+    folium.Marker(
+        indonesia_center,
+        popup="Click anywhere on the map to select a location",
+        tooltip="Indonesia Center - Click to select location",
+        icon=folium.Icon(color='red', icon='info-sign')
+    ).add_to(m)
+    
+    # Display map and get click data
+    map_data = st_folium(m, width=700, height=400, key="location_map")
+    
+    # Handle map clicks
+    selected_lat = None
+    selected_lon = None
+    
+    if map_data['last_object_clicked_popup']:
+        # If user clicked on existing marker, get coordinates
+        pass
+    
+    if map_data['last_clicked']:
+        selected_lat = map_data['last_clicked']['lat']
+        selected_lon = map_data['last_clicked']['lng']
+        st.success(f"📍 Selected coordinates: {selected_lat:.6f}, {selected_lon:.6f}")
+    
+    # Manual coordinate input option
+    st.markdown("**Alternative: Manual Coordinate Input**")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        manual_lat = st.number_input(
+            "Latitude:",
+            min_value=-90.0,
+            max_value=90.0,
+            value=selected_lat if selected_lat else -6.2088,
+            format="%.6f",
+            key="manual_lat"
+        )
+    
+    with col2:
+        manual_lon = st.number_input(
+            "Longitude:",
+            min_value=-180.0,
+            max_value=180.0,
+            value=selected_lon if selected_lon else 106.8456,
+            format="%.6f",
+            key="manual_lon"
+        )
+    
+    # Use manual input if map wasn't clicked
+    if not selected_lat or not selected_lon:
+        selected_lat = manual_lat
+        selected_lon = manual_lon
+    
+    st.info(f"🎯 Search coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
+    
+    # Step 2: Additional filters
+    st.markdown("**Step 2: Additional Filters (Optional)**")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.markdown("**Kondisi Wilayah Sekitar:**")
+        # Get unique values for kondisi_wilayah_sekitar
+        with st.spinner("Loading kondisi wilayah options..."):
+            kondisi_values, _ = db.get_column_unique_values(table, 'kondisi_wilayah_sekitar', schema)
+        
+        selected_kondisi = []
+        if kondisi_values:
+            selected_kondisi = st.multiselect(
+                "Select kondisi wilayah:",
+                kondisi_values,
+                help="Filter by surrounding area conditions",
+                key="point_kondisi"
+            )
+    
+    with col2:
+        st.markdown("**Luas Tanah (m²):**")
+        # Get min/max for luas_tanah
+        luas_query = f'SELECT MIN("luas_tanah") as min_val, MAX("luas_tanah") as max_val FROM "{schema}"."{table}" WHERE "luas_tanah" IS NOT NULL'
+        luas_result, _ = db.execute_query(luas_query)
+        
+        if luas_result is not None and len(luas_result) > 0:
+            min_luas = float(luas_result['min_val'].iloc[0])
+            max_luas = float(luas_result['max_val'].iloc[0])
+            
+            luas_range = st.slider(
+                "Luas tanah range:",
+                min_value=min_luas,
+                max_value=max_luas,
+                value=(min_luas, max_luas),
+                help="Filter by land area",
+                key="point_luas"
+            )
+        else:
+            luas_range = None
+    
+    with col3:
+        st.markdown("**Lebar Jalan di Depan (m):**")
+        # Get min/max for lebar_jalan_di_depan
+        lebar_query = f'SELECT MIN("lebar_jalan_di_depan") as min_val, MAX("lebar_jalan_di_depan") as max_val FROM "{schema}"."{table}" WHERE "lebar_jalan_di_depan" IS NOT NULL'
+        lebar_result, _ = db.execute_query(lebar_query)
+        
+        if lebar_result is not None and len(lebar_result) > 0:
+            min_lebar = float(lebar_result['min_val'].iloc[0])
+            max_lebar = float(lebar_result['max_val'].iloc[0])
+            
+            lebar_range = st.slider(
+                "Lebar jalan range:",
+                min_value=min_lebar,
+                max_value=max_lebar,
+                value=(min_lebar, max_lebar),
+                help="Filter by road width in front",
+                key="point_lebar"
+            )
+        else:
+            lebar_range = None
+    
+    # Search button
+    st.markdown("**Step 3: Execute Search**")
+    if st.button("🔍 Search Nearest Properties", type="primary", use_container_width=True, key="point_search"):
+        # Prepare filter parameters
+        luas_tanah_range = luas_range if luas_range and luas_range != (min_luas, max_luas) else None
+        lebar_jalan_range = lebar_range if lebar_range and lebar_range != (min_lebar, max_lebar) else None
+        kondisi_wilayah_opt = selected_kondisi if selected_kondisi else None
+        
+        # Build and execute query
+        search_properties_by_location(
+            db, schema, table, 
+            selected_lat, selected_lon,
+            luas_tanah_range, lebar_jalan_range, kondisi_wilayah_opt
+        )
+
+def load_administrative_data(db, schema, table, filters):
+    """Load data using administrative filtering"""
+    try:
+        # Get mandatory columns
+        mandatory_cols = ['luas_tanah', 'hpm', 'longitude', 'latitude']
+        
+        # Build SELECT clause
+        select_columns = ', '.join([f'"{col}"' for col in mandatory_cols])
+        query = f'SELECT {select_columns} FROM "{schema}"."{table}"'
+        
+        # Build WHERE clause
+        where_conditions = []
+        
+        for col, filter_val in filters.items():
+            if isinstance(filter_val, list):
+                if filter_val:
+                    values_str = "', '".join([str(v) for v in filter_val])
+                    where_conditions.append(f'"{col}" IN (\'{values_str}\')')
+            elif isinstance(filter_val, dict):
+                if filter_val.get('type') == 'range':
+                    where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
+        
+        if where_conditions:
+            query += ' WHERE ' + ' AND '.join(where_conditions)
+        
+        query += ' LIMIT 100000'
+        
+        # Execute query
+        with st.spinner("Loading data..."):
+            result_df, message = db.execute_query(query)
+        
+        if result_df is not None:
+            st.session_state.current_data = result_df
+            st.session_state.applied_filters = filters
+            
+            st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows")
+            st.dataframe(result_df.head(10), use_container_width=True)
+            
+            # Show summary
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Total Rows", f"{len(result_df):,}")
+            with col2:
+                st.metric("Avg HPM", f"{result_df['hpm'].mean():,.0f}")
+            with col3:
+                st.metric("Avg Luas", f"{result_df['luas_tanah'].mean():.0f} m²")
+            with col4:
+                st.metric("Data Points", len(result_df))
+        else:
+            st.error(f"Failed to load data: {message}")
+            
+    except Exception as e:
+        st.error(f"Error loading data: {str(e)}")
+
+def search_properties_by_location(db, schema, table, lat, lon, luas_tanah_range, lebar_jalan_range, kondisi_wilayah_opt):
+    """Search properties by location using PostGIS"""
+    try:
+        # Build SQL query
+        sql_query = build_property_query(
+            lat, lon,
+            luas_tanah_range=luas_tanah_range,
+            lebar_jalan_range=lebar_jalan_range,
+            kondisi_wilayah_opt=kondisi_wilayah_opt,
+            schema=schema,
+            table=table
+        )
+        
+        # Execute query
+        with st.spinner("Searching nearest properties..."):
+            result_df, message = db.execute_query(sql_query)
+        
+        if result_df is not None and len(result_df) > 0:
+            st.session_state.current_data = result_df
+            
+            st.success(f"✅ Found {len(result_df)} properties near your location!")
+            
+            # Show results summary
+            col1, col2, col3, col4 = st.columns(4)
+            with col1:
+                st.metric("Properties Found", len(result_df))
+            with col2:
+                if 'distance_meters' in result_df.columns:
+                    avg_distance = result_df['distance_meters'].mean()
+                    st.metric("Avg Distance", f"{avg_distance/1000:.1f} km")
+            with col3:
+                if 'hpm' in result_df.columns:
+                    avg_hpm = result_df['hpm'].mean()
+                    st.metric("Avg HPM", f"{avg_hpm:,.0f}")
+            with col4:
+                if 'luas_tanah' in result_df.columns:
+                    avg_luas = result_df['luas_tanah'].mean()
+                    st.metric("Avg Luas", f"{avg_luas:.0f} m²")
+            
+            # Show data preview
+            st.markdown("**Search Results Preview:**")
+            display_columns = ['distance_meters', 'hpm', 'luas_tanah', 'lebar_jalan_di_depan', 'kondisi_wilayah_sekitar']
+            available_columns = [col for col in display_columns if col in result_df.columns]
+            
+            if available_columns:
+                preview_df = result_df[available_columns].head(10).copy()
+                if 'distance_meters' in preview_df.columns:
+                    preview_df['distance_km'] = preview_df['distance_meters'] / 1000
+                    preview_df = preview_df.drop('distance_meters', axis=1)
+                
+                st.dataframe(preview_df, use_container_width=True)
+            else:
+                st.dataframe(result_df.head(10), use_container_width=True)
+            
+            # Show applied filters summary
+            st.markdown("**Applied Search Filters:**")
+            st.write(f"📍 **Search Center:** {lat:.6f}, {lon:.6f}")
+            
+            if luas_tanah_range:
+                st.write(f"🏞️ **Luas Tanah:** {luas_tanah_range[0]:.0f} - {luas_tanah_range[1]:.0f} m²")
+            
+            if lebar_jalan_range:
+                st.write(f"🛣️ **Lebar Jalan:** {lebar_jalan_range[0]:.0f} - {lebar_jalan_range[1]:.0f} m")
+            
+            if kondisi_wilayah_opt:
+                st.write(f"🏘️ **Kondisi Wilayah:** {', '.join(kondisi_wilayah_opt)}")
+            
+            st.write(f"📊 **Result Limit:** Nearest 300 properties")
+            
+        else:
+            st.warning("No properties found matching your criteria. Try adjusting your filters or location.")
+            
+    except Exception as e:
+        st.error(f"Error searching properties: {str(e)}")
+        st.code(sql_query)  # Show query for debugging
+
+
+# Integration function to be added to your main render_data_selection() function
+def integrate_land_market_filtering():
+    """
+    Replace the existing Land Market filtering section in render_data_selection() 
+    with this enhanced version that provides two filtering options.
+    
+    In your main code, replace the land market filtering section with:
+    
+    if st.session_state.selected_table == 'engineered_property_data':
+        render_land_market_filtering()
+        return  # Exit early for land market data
+    
+    This should be placed right after the table selection and before the 
+    existing column selection logic.
+    """
+    pass
+
 def render_data_selection():
     """Render data selection and filtering section"""
     st.markdown('<div class="section-header">🎯 Pilih dan Filter Data</div>', unsafe_allow_html=True)
@@ -527,101 +1050,9 @@ def render_data_selection():
                 schema = st.session_state.get('schema', 'public')
                 table = st.session_state.selected_table
 
-                if table == 'engineered_property_data':
-                    # Full cascading filters for Land Market
-                    # Province
-                    st.markdown("#### 🎯 **Required: Select Province/Region**")
-                    with st.spinner("Loading province options..."):
-                        province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
-
-                    if province_values:
-                        selected_province = st.selectbox(
-                            "Choose a Province/Region:",
-                            [""] + province_values,
-                            help="You must select a province/region to continue"
-                        )
-                        if not selected_province:
-                            st.error("❌ Please select a province/region to continue")
-                            st.stop()
-                    else:
-                        st.error(f"Could not load provinces: {province_msg}")
-                        st.stop()
-
-                    # Regency/City
-                    st.markdown("#### 🎯 **Required: Select Regency/City**")
-                    with st.spinner("Loading regency/city options..."):
-                        regency_query = f'''
-                            SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
-                            WHERE wadmpr = '{selected_province}'
-                            ORDER BY wadmkk
-                        '''
-                        regency_df, _ = db.execute_query(regency_query)
-                        regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
-
-                    if regency_values:
-                        selected_regency = st.selectbox(
-                            "Choose a Regency/City:",
-                            [""] + regency_values,
-                            help="You must select a regency/city to continue"
-                        )
-                        if not selected_regency:
-                            st.error("❌ Please select a regency/city to continue")
-                            st.stop()
-                    else:
-                        st.error("No regency/city found for the selected province.")
-                        st.stop()
-
-                    # District
-                    st.markdown("#### 🎯 **Required: Select District**")
-                    with st.spinner("Loading district options..."):
-                        district_query = f'''
-                            SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
-                            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
-                            ORDER BY wadmkc
-                        '''
-                        district_df, _ = db.execute_query(district_query)
-                        district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
-
-                    if district_values:
-                        selected_district = st.selectbox(
-                            "Choose a District:",
-                            [""] + district_values,
-                            help="You must select a district to continue"
-                        )
-                        if not selected_district:
-                            st.error("❌ Please select a district to continue")
-                            st.stop()
-                    else:
-                        st.error("No district found for the selected regency/city.")
-                        st.stop()
-
-                    # Subdistrict (optional)
-                    st.markdown("#### Optional: Select Subdistrict")
-                    with st.spinner("Loading subdistrict options..."):
-                        subdistrict_query = f'''
-                            SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
-                            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
-                            ORDER BY wadmkd
-                        '''
-                        subdistrict_df, _ = db.execute_query(subdistrict_query)
-                        subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
-
-                    selected_subdistrict = st.selectbox(
-                        "Choose a Subdistrict (optional):",
-                        [""] + subdistrict_values
-                    )
-
-                    # Initialize filters
-                    filters = {}
-                    filters['wadmpr'] = [selected_province]
-                    if selected_regency:  # avoid empty/null/None
-                        filters['wadmkk'] = [selected_regency]
-                    if selected_district:
-                        filters['wadmkc'] = [selected_district]
-                    if selected_subdistrict:
-                        filters['wadmkd'] = [selected_subdistrict]
-
-                    st.success("All required region filters selected! Continue to next steps.")
+                if st.session_state.selected_table == 'engineered_property_data':
+                    render_land_market_filtering()
+                    return  # Exit early for land market data
 
                 else:
                     # For other tables: only require province, others are optional
