@@ -1628,18 +1628,20 @@ def render_data_chatbot():
                                 colorbar=dict(title=value_col)
                             ),
                             text=enhanced_text,
-                            hovertemplate='<b>%{text}</b><br>Lat: %{lat}<br>Lon: %{lon}<extra></extra>',
+                            hovertemplate='<b>%{text}</b><extra></extra>',
                             name='Properties'
                         ))
                     else:
                         hover_text = []
                         for idx, row in map_df.iterrows():
-                            text = f"Lat: {row[lat_col]}<br>Lon: {row[lon_col]}"
+                            text_parts = []
                             if 'luas_tanah' in map_df.columns:
-                                text += f"<br>Luas Tanah: {row.get('luas_tanah', 'N/A')} m²"
+                                text_parts.append(f"Luas Tanah: {row.get('luas_tanah', 'N/A')} m²")
                             if 'kondisi_wilayah_sekitar' in map_df.columns:
-                                text += f"<br>Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}"
-                            hover_text.append(text)  # ADD THIS LINE
+                                text_parts.append(f"Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}")
+                            
+                            text = "<br>".join(text_parts) if text_parts else "Property Info"
+                            hover_text.append(text) 
 
                         fig.add_trace(go.Scattermapbox(
                             lat=map_df[lat_col],
