@@ -603,28 +603,43 @@ def render_point_based_filtering(db, schema, table):
         tiles="OpenStreetMap"
     )
     
-    # Add marker instruction
+    # Add instruction marker
     folium.Marker(
         indonesia_center,
         popup="Click anywhere on the map to select a location",
         tooltip="Indonesia Center - Click to select location",
-        icon=folium.Icon(color='red', icon='info-sign')
+        icon=folium.Icon(color='blue', icon='info-sign')
     ).add_to(m)
     
     # Display map and get click data
     map_data = st_folium(m, width=700, height=400, key="location_map")
     
-    # Handle map clicks
+    # Handle map clicks and add marker at clicked location
     selected_lat = None
     selected_lon = None
-    
-    if map_data['last_object_clicked_popup']:
-        # If user clicked on existing marker, get coordinates
-        pass
     
     if map_data['last_clicked']:
         selected_lat = map_data['last_clicked']['lat']
         selected_lon = map_data['last_clicked']['lng']
+        
+        # Create new map with marker at clicked location
+        m_with_marker = folium.Map(
+            location=[selected_lat, selected_lon],
+            zoom_start=12,
+            tiles="OpenStreetMap"
+        )
+        
+        # Add marker at selected location
+        folium.Marker(
+            [selected_lat, selected_lon],
+            popup=f"Selected Location<br>Lat: {selected_lat:.6f}<br>Lon: {selected_lon:.6f}",
+            tooltip="Selected Search Location",
+            icon=folium.Icon(color='red', icon='map-pin')
+        ).add_to(m_with_marker)
+        
+        # Show updated map with marker
+        st.markdown("**Selected Location:**")
+        st_folium(m_with_marker, width=700, height=300, key="selected_location_map")
         st.success(f"📍 Selected coordinates: {selected_lat:.6f}, {selected_lon:.6f}")
     
     # Manual coordinate input option
