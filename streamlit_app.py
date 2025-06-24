@@ -743,7 +743,7 @@ def render_point_based_filtering(db, schema, table):
     st.markdown("**Step 3: Execute Search**")
     if st.button("🔍 Search Nearest Properties", type="primary", use_container_width=True, key="point_search"):
         # Prepare filter parameters
-        luas_tanah_range = luas_range if luas_range and luas_range != (min_luas, max_luas) else None
+        luas_tanah_range = luas_range
         lebar_jalan_range = lebar_range if lebar_range and lebar_range != (min_lebar, max_lebar) else None
         kondisi_wilayah_opt = selected_kondisi if selected_kondisi else None
         
