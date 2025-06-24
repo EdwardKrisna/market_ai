@@ -25,7 +25,7 @@ from langchain.chat_models import ChatOpenAI
 from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
 
 import folium
-import streamlit_folium as st_folium
+from streamlit_folium import st_folium
 
 # import pygwalker as pyg
 from pygwalker.api.streamlit import StreamlitRenderer
