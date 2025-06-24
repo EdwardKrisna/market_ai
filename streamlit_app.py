@@ -764,51 +764,109 @@ def render_data_selection():
                         with col1:
                             st.markdown("**Click on the map to select your target location:**")
                             
-                            # Create a simple interactive map using Plotly
-                            fig = go.Figure()
-                            
-                            # Add base map
-                            fig.add_trace(go.Scattermapbox(
-                                mode="markers",
-                                marker=dict(size=1, opacity=0),
-                                showlegend=False,
-                                hoverinfo='skip'
-                            ))
-                            
-                            # If point is selected, show it
-                            if st.session_state.map_selected_point:
-                                lat, lon = st.session_state.map_selected_point
-                                fig.add_trace(go.Scattermapbox(
-                                    lat=[lat],
-                                    lon=[lon],
-                                    mode='markers',
-                                    marker=dict(
-                                        size=15,
-                                        color='red',
-                                        symbol='circle'
+                            # Import folium for interactive map
+                            try:
+                                import folium
+                                from streamlit_folium import st_folium
+                                
+                                # Create Folium map
+                                center_lat = -2.5  # Indonesia center
+                                center_lon = 118.0
+                                zoom_start = 5
+                                
+                                # If point is already selected, center on it
+                                if st.session_state.map_selected_point:
+                                    center_lat, center_lon = st.session_state.map_selected_point
+                                    zoom_start = 10
+                                
+                                m = folium.Map(
+                                    location=[center_lat, center_lon],
+                                    zoom_start=zoom_start,
+                                    tiles='OpenStreetMap'
+                                )
+                                
+                                # Add marker if point is selected
+                                if st.session_state.map_selected_point:
+                                    lat, lon = st.session_state.map_selected_point
+                                    folium.Marker(
+                                        [lat, lon],
+                                        popup=f"Selected Location<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}",
+                                        tooltip=f"Selected: {lat:.6f}, {lon:.6f}",
+                                        icon=folium.Icon(color='red', icon='info-sign')
+                                    ).add_to(m)
+                                
+                                # Display the map and capture click events
+                                map_data = st_folium(
+                                    m, 
+                                    width=700, 
+                                    height=400,
+                                    returned_objects=["last_object_clicked"]
+                                )
+                                
+                                # Handle map clicks
+                                if map_data['last_object_clicked'] is None and map_data.get('last_clicked'):
+                                    # User clicked on the map (not on a marker)
+                                    click_data = map_data['last_clicked']
+                                    if click_data and 'lat' in click_data and 'lng' in click_data:
+                                        new_lat = click_data['lat']
+                                        new_lon = click_data['lng']
+                                        
+                                        # Update selected point
+                                        st.session_state.map_selected_point = (new_lat, new_lon)
+                                        st.rerun()
+                                
+                            except ImportError:
+                                # Fallback to simple display map if folium is not available
+                                st.warning("⚠️ Interactive map not available. Please use manual coordinate input below.")
+                                
+                                # Create a simple display map using Plotly
+                                fig = go.Figure()
+                                
+                                # If point is selected, show it
+                                if st.session_state.map_selected_point:
+                                    lat, lon = st.session_state.map_selected_point
+                                    fig.add_trace(go.Scattermapbox(
+                                        lat=[lat],
+                                        lon=[lon],
+                                        mode='markers',
+                                        marker=dict(
+                                            size=15,
+                                            color='red',
+                                            symbol='circle'
+                                        ),
+                                        text=[f"Selected Point<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}"],
+                                        hovertemplate='%{text}<extra></extra>',
+                                        name='Selected Location'
+                                    ))
+                                else:
+                                    # Add invisible point to initialize map
+                                    fig.add_trace(go.Scattermapbox(
+                                        lat=[-2.5],
+                                        lon=[118],
+                                        mode="markers",
+                                        marker=dict(size=1, opacity=0),
+                                        showlegend=False,
+                                        hoverinfo='skip'
+                                    ))
+                                
+                                # Map layout - centered on Indonesia
+                                fig.update_layout(
+                                    mapbox=dict(
+                                        style="open-street-map",
+                                        center=dict(lat=-2.5, lon=118),  # Indonesia center
+                                        zoom=4
                                     ),
-                                    text=[f"Selected Point<br>Lat: {lat:.6f}<br>Lon: {lon:.6f}"],
-                                    hovertemplate='%{text}<extra></extra>',
-                                    name='Selected Location'
-                                ))
-                            
-                            # Map layout - centered on Indonesia
-                            fig.update_layout(
-                                mapbox=dict(
-                                    style="open-street-map",
-                                    center=dict(lat=-2.5, lon=118),  # Indonesia center
-                                    zoom=4
-                                ),
-                                height=400,
-                                margin=dict(l=0, r=0, t=0, b=0),
-                                showlegend=False
-                            )
-                            
-                            # Display map
-                            map_placeholder = st.plotly_chart(fig, use_container_width=True, key="location_map")
+                                    height=400,
+                                    margin=dict(l=0, r=0, t=0, b=0),
+                                    showlegend=False
+                                )
+                                
+                                # Display map
+                                st.plotly_chart(fig, use_container_width=True)
                         
                         with col2:
                             st.markdown("**Manual Coordinate Input:**")
+                            st.info("💡 Click on the map or enter coordinates manually")
                             
                             # Manual coordinate input as backup
                             manual_lat = st.number_input(
@@ -818,7 +876,7 @@ def render_data_selection():
                                 value=-6.2088 if not st.session_state.map_selected_point else st.session_state.map_selected_point[0],
                                 step=0.000001,
                                 format="%.6f",
-                                help="Enter latitude coordinate"
+                                help="Enter latitude coordinate (-90 to 90)"
                             )
                             
                             manual_lon = st.number_input(
@@ -828,16 +886,35 @@ def render_data_selection():
                                 value=106.8456 if not st.session_state.map_selected_point else st.session_state.map_selected_point[1],
                                 step=0.000001,
                                 format="%.6f",
-                                help="Enter longitude coordinate"
+                                help="Enter longitude coordinate (-180 to 180)"
                             )
                             
-                            if st.button("📍 Use These Coordinates", use_container_width=True):
-                                st.session_state.map_selected_point = (manual_lat, manual_lon)
-                                st.rerun()
+                            col_btn1, col_btn2 = st.columns(2)
+                            with col_btn1:
+                                if st.button("📍 Use Coordinates", use_container_width=True):
+                                    st.session_state.map_selected_point = (manual_lat, manual_lon)
+                                    st.rerun()
                             
-                            if st.button("🔄 Clear Selection", use_container_width=True):
-                                st.session_state.map_selected_point = None
-                                st.rerun()
+                            with col_btn2:
+                                if st.button("🔄 Clear", use_container_width=True):
+                                    st.session_state.map_selected_point = None
+                                    st.rerun()
+                            
+                            # Show some example locations
+                            st.markdown("**Quick Locations:**")
+                            
+                            example_locations = {
+                                "Jakarta": (-6.2088, 106.8456),
+                                "Surabaya": (-7.2575, 112.7521),
+                                "Bandung": (-6.9175, 107.6191),
+                                "Medan": (3.5952, 98.6722),
+                                "Semarang": (-6.9667, 110.4167)
+                            }
+                            
+                            for city, coords in example_locations.items():
+                                if st.button(f"📍 {city}", key=f"loc_{city}", use_container_width=True):
+                                    st.session_state.map_selected_point = coords
+                                    st.rerun()
                         
                         # Show selected coordinates
                         if st.session_state.map_selected_point:
