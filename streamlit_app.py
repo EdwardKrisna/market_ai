@@ -616,7 +616,10 @@ def render_point_based_filtering(db, schema, table):
     # Map container - full width responsive
     # with st.container():
     with st.expander("Show Map", expanded=False):
-        st.info("Test")
+        st.info("""How to use the map:
+                - 1
+                - 2
+                good""")
         map_data = st_folium(m, width=None, height=400, key="location_map")
         # st.markdown("</div>", unsafe_allow_html=True)
     st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
