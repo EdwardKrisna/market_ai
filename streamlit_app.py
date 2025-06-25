@@ -1981,7 +1981,7 @@ def main():
     
     # Table selection status
     if st.session_state.selected_table:
-        st.sidebar.success("Table: ✅")
+        st.sidebar.success("Table checked ✅")
         # st.sidebar.success(f"✅ Table: {st.session_state.selected_table}")
     else:
         st.sidebar.warning("⚠️ No Table Selected")
@@ -2008,10 +2008,8 @@ def main():
         """
         **RHR Market Research Agent**
         
-        🏠 Advanced property analysis with live market data
-        🤖 AI-powered insights and predictions  
-        📊 Professional statistical modeling
-        📈 Interactive visualizations
+        🏠 Property analysis with RHR market data
+        🤖 AI-powered insights
         
         Built with Streamlit, OpenAI
         """
