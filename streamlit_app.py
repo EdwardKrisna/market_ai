@@ -593,7 +593,7 @@ def render_point_based_filtering(db, schema, table):
     st.markdown("#### 🗺️ **Point-Based Location Search**")
     
     # Map for coordinate selection
-    st.markdown("**Step 1: Select Location on Map**")
+    st.markdown("**Step 1: Input Coordinates**")
     
     # Create Indonesia-centered map
     indonesia_center = [-2.5, 118.0]  # Center of Indonesia
@@ -615,7 +615,8 @@ def render_point_based_filtering(db, schema, table):
 
     # Map container - full width responsive
     # with st.container():
-    with st.expander("Show Map", expanded=True):  # expanded=True makes it open by default
+    with st.expander("Show Map", expanded=False):
+        st.info("Test")
         map_data = st_folium(m, width=None, height=400, key="location_map")
         # st.markdown("</div>", unsafe_allow_html=True)
     st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
