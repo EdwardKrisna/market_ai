@@ -616,10 +616,11 @@ def render_point_based_filtering(db, schema, table):
     # Map container - full width responsive
     # with st.container():
     with st.expander("Show Map", expanded=False):
-        st.info("""How to use the map:
-                - 1
-                - 2
-                good""")
+        st.info("""
+                **How to use the map:**
+                - Step 1: Drag the red marker to your location
+                - Step 2: Press the red marker
+                """)
         map_data = st_folium(m, width=None, height=400, key="location_map")
         # st.markdown("</div>", unsafe_allow_html=True)
     st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
@@ -651,24 +652,33 @@ def render_point_based_filtering(db, schema, table):
     col1, col2 = st.columns(2)
     
     with col1:
-        manual_lat = st.number_input(
+        lat_str = st.text_input(
             "Latitude:",
-            min_value=-90.0,
-            max_value=90.0,
-            value=selected_lat if selected_lat else -6.2088,
-            format="%.6f",
+            value=str(selected_lat) if selected_lat else "-6.2088",
             key="manual_lat"
         )
-    
+        # Validate input and convert to float if possible
+        try:
+            manual_lat = float(lat_str)
+            if not (-90.0 <= manual_lat <= 90.0):
+                st.error("Latitude must be between -90 and 90.")
+        except ValueError:
+            st.error("Please enter a valid number for latitude.")
+
     with col2:
-        manual_lon = st.number_input(
+        lon_str = st.text_input(
             "Longitude:",
-            min_value=-180.0,
-            max_value=180.0,
-            value=selected_lon if selected_lon else 106.8456,
-            format="%.6f",
+            value=str(selected_lon) if selected_lon else "106.8456",
             key="manual_lon"
         )
+        # Validate input and convert to float if possible
+        try:
+            manual_lon = float(lon_str)
+            if not (-180.0 <= manual_lon <= 180.0):
+                st.error("Longitude must be between -180 and 180.")
+        except ValueError:
+            st.error("Please enter a valid number for longitude.")
+
     
     # Use manual input if map wasn't clicked
     if not selected_lat or not selected_lon:
@@ -701,51 +711,62 @@ def render_point_based_filtering(db, schema, table):
         st.markdown("**Luas Tanah (m²):**")
         col2a, col2b = st.columns(2)
         with col2a:
-            min_luas = st.number_input(
+            min_luas_str = st.text_input(
                 "Min Luas:",
-                min_value=0.0,
-                value=0.0,
-                step=10.0,
+                value="50",
                 key="point_min_luas"
             )
         with col2b:
-            max_luas = st.number_input(
+            max_luas_str = st.text_input(
                 "Max Luas:",
-                min_value=0.0,
-                value=10000.0,
-                step=10.0,
+                value="100000",
                 key="point_max_luas"
             )
-        
-        if min_luas > 0 or max_luas < 10000.0:
-            luas_range = (min_luas, max_luas)
-        else:
+
+        # Validate and convert
+        try:
+            min_luas = float(min_luas_str)
+            max_luas = float(max_luas_str)
+            if min_luas > 50 or max_luas < 100000:
+                luas_range = (min_luas, max_luas)
+            else:
+                luas_range = None
+            if min_luas > max_luas:
+                st.error("Min Luas cannot be greater than Max Luas.")
+        except ValueError:
             luas_range = None
+            st.error("Please enter valid numbers for Luas Tanah.")
 
     with col3:
         st.markdown("**Lebar Jalan di Depan (m):**")
         col3a, col3b = st.columns(2)
         with col3a:
-            min_lebar = st.number_input(
+            min_lebar_str = st.text_input(
                 "Min Lebar:",
-                min_value=0.0,
-                value=0.0,
-                step=0.5,
+                value="1",
                 key="point_min_lebar"
             )
         with col3b:
-            max_lebar = st.number_input(
+            max_lebar_str = st.text_input(
                 "Max Lebar:",
-                min_value=0.0,
-                value=50.0,
-                step=0.5,
+                value="50",
                 key="point_max_lebar"
             )
-        
-        if min_lebar > 0 or max_lebar < 50.0:
-            lebar_range = (min_lebar, max_lebar)
-        else:
+
+        # Validate and convert
+        try:
+            min_lebar = float(min_lebar_str)
+            max_lebar = float(max_lebar_str)
+            if min_lebar > 1 or max_lebar < 50:
+                lebar_range = (min_lebar, max_lebar)
+            else:
+                lebar_range = None
+            if min_lebar > max_lebar:
+                st.error("Min Lebar cannot be greater than Max Lebar.")
+        except ValueError:
             lebar_range = None
+            st.error("Please enter valid numbers for Lebar Jalan.")
+
     
     # Search button
     st.markdown("**Step 3: Execute Search**")
