@@ -620,6 +620,7 @@ def render_point_based_filtering(db, schema, table):
                 **How to use the map:**
                 - Step 1: Drag the red marker to your location
                 - Step 2: Press the red marker
+                - Step 3: Wait until the 'Current coordinates' change
                 """)
         map_data = st_folium(m, width=None, height=400, key="location_map")
         # st.markdown("</div>", unsafe_allow_html=True)
@@ -1950,7 +1951,7 @@ def main():
         "🔗 Koneksi Database",
         "🎯 Pilih dan Filter Data",
         "💬 RHR AI",
-        "📊 Dashboard"
+        # "📊 Dashboard"
     ]
     
     selected_section = st.sidebar.radio("Go to:", sections)
@@ -1965,8 +1966,8 @@ def main():
     elif selected_section == "💬 RHR AI":
         render_data_chatbot()
     
-    elif selected_section == "📊 Dashboard":
-        render_dashboard()
+    # elif selected_section == "📊 Dashboard":
+    #     render_dashboard()
     
     # Sidebar info and status
     st.sidebar.markdown("---")
