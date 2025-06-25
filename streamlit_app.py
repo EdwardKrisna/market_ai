@@ -1981,7 +1981,8 @@ def main():
     
     # Table selection status
     if st.session_state.selected_table:
-        st.sidebar.success(f"✅ Table: {st.session_state.selected_table}")
+        st.sidebar.success("Table: ✅")
+        # st.sidebar.success(f"✅ Table: {st.session_state.selected_table}")
     else:
         st.sidebar.warning("⚠️ No Table Selected")
     
