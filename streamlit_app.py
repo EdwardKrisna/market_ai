@@ -406,7 +406,7 @@ def render_land_market_filtering():
     if st.session_state.selected_table != 'engineered_property_data':
         return
     
-    st.markdown("### 🔍 **Data Selection Method**")
+    st.markdown("### **Data Selection Method**")
     
     # Filter method selection
     filter_method = st.radio(
@@ -1086,7 +1086,7 @@ def render_data_selection():
                     "Select up to 6 columns for Land Market analysis:",
                     user_selectable_cols,
                     default=[],
-                    help="Mandatory columns luas_tanah, hpm, longitude, latitude are always included."
+                    help="Mandatory columns luas_tanah, kondisi_wilayah_sekitar, hpm, longitude, latitude are always included."
                 )
 
                 if len(selected_user_cols) > 6:
@@ -1094,8 +1094,12 @@ def render_data_selection():
                     
                 selected_columns = mandatory_cols + selected_user_cols
 
-                st.info(f"📊 {len(selected_columns)} columns selected (5 mandatory + {len(selected_user_cols)} user-selected)")
-   
+                st.info(
+                    f"📊 {len(selected_columns)} columns selected "
+                    f"(5 mandatory + {len(selected_user_cols)} user-selected)\n\n"
+                    "• **Mandatory columns:** `luas_tanah`, `kondisi_wilayah_sekitar`, `hpm`, `longitude`, `latitude`"
+                )
+
             else:
                 selected_columns = available_columns
                 # Then continue with the flexible filter UI below as you currently have it
@@ -1104,7 +1108,7 @@ def render_data_selection():
             
             if selected_columns:
                 st.markdown('<div class="filter-section">', unsafe_allow_html=True)
-                st.markdown("### 🔍 **Data Selection**")
+                st.markdown("## 🔍 **Data Selection**")
 
                 db = st.session_state.db_connection
                 schema = st.session_state.get('schema', 'public')
