@@ -650,42 +650,39 @@ def render_point_based_filtering(db, schema, table):
     
     # Manual coordinate input option
     st.markdown("**Alternative: Manual Coordinate Input**")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        lat_str = st.text_input(
-            "Latitude:",
-            value=str(selected_lat) if selected_lat else "-6.2088",
-            key="manual_lat"
-        )
-        # Validate input and convert to float if possible
-        try:
-            manual_lat = float(lat_str)
-            if not (-90.0 <= manual_lat <= 90.0):
-                st.error("Latitude must be between -90 and 90.")
-        except ValueError:
-            st.error("Please enter a valid number for latitude.")
 
-    with col2:
-        lon_str = st.text_input(
-            "Longitude:",
-            value=str(selected_lon) if selected_lon else "106.8456",
-            key="manual_lon"
-        )
-        # Validate input and convert to float if possible
-        try:
-            manual_lon = float(lon_str)
-            if not (-180.0 <= manual_lon <= 180.0):
-                st.error("Longitude must be between -180 and 180.")
-        except ValueError:
-            st.error("Please enter a valid number for longitude.")
+    # Single input for Google Maps style coordinates
+    google_coords = st.text_input(
+        "Enter coordinates (Latitude, Longitude):",
+        value=f"{selected_lat:.6f}, {selected_lon:.6f}",
+        help="Copy-paste from Google Maps (format: -6.2640685548010575, 106.99669724429697)",
+        key="google_coords"
+    )
 
-    
-    # Use manual input if map wasn't clicked
-    if not selected_lat or not selected_lon:
-        selected_lat = manual_lat
-        selected_lon = manual_lon
-    
+    # Parse Google Maps coordinates
+    try:
+        if google_coords and ',' in google_coords:
+            coords_parts = [x.strip() for x in google_coords.split(',')]
+            if len(coords_parts) == 2:
+                manual_lat = float(coords_parts[0])
+                manual_lon = float(coords_parts[1])
+                
+                # Validate coordinate ranges
+                if -90.0 <= manual_lat <= 90.0 and -180.0 <= manual_lon <= 180.0:
+                    selected_lat = manual_lat
+                    selected_lon = manual_lon
+                    st.success(f"✅ Valid coordinates: {manual_lat:.6f}, {manual_lon:.6f}")
+                else:
+                    st.error("❌ Coordinates out of valid range (Lat: -90 to 90, Lon: -180 to 180)")
+            else:
+                st.error("❌ Please enter coordinates in format: latitude, longitude")
+        elif google_coords and ',' not in google_coords:
+            st.error("❌ Please separate latitude and longitude with a comma")
+    except ValueError:
+        st.error("❌ Please enter valid numbers for coordinates")
+    except Exception as e:
+        st.error(f"❌ Error parsing coordinates: {str(e)}")
+
     st.info(f"🎯 Search coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
     
     # Step 2: Additional filters
