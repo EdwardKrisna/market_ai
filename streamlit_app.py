@@ -627,41 +627,47 @@ def render_point_based_filtering(db, schema, table):
     st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
 
     # Get coordinates from draggable marker or default
-    selected_lat = indonesia_center[0]  # Default
-    selected_lon = indonesia_center[1]  # Default
+    map_lat = indonesia_center[0]  # Default
+    map_lon = indonesia_center[1]  # Default
+    map_used = False
 
     # Check for dragged marker position
     if map_data and 'last_object_clicked' in map_data and map_data['last_object_clicked']:
         clicked_data = map_data['last_object_clicked']
         if 'lat' in clicked_data and 'lng' in clicked_data:
-            selected_lat = clicked_data['lat']
-            selected_lon = clicked_data['lng']
+            map_lat = clicked_data['lat']
+            map_lon = clicked_data['lng']
+            map_used = True
 
     # Alternative: check all_drawings for marker position
     elif map_data and 'all_drawings' in map_data and map_data['all_drawings']:
         for drawing in map_data['all_drawings']:
             if drawing['geometry']['type'] == 'Point':
                 coords = drawing['geometry']['coordinates']
-                selected_lon = coords[0]  # longitude first in GeoJSON
-                selected_lat = coords[1]   # latitude second
+                map_lon = coords[0]  # longitude first in GeoJSON
+                map_lat = coords[1]   # latitude second
+                map_used = True
 
-    # Show current coordinates (this will immediately follow the map with no gap)
-    st.info(f"🎯 Current coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
-    
     # Manual coordinate input option
     st.markdown("**Alternative: Manual Coordinate Input**")
 
     # Single input for Google Maps style coordinates
     google_coords = st.text_input(
         "Enter coordinates (Latitude, Longitude):",
-        value=f"{selected_lat:.6f}, {selected_lon:.6f}",
+        value=f"{map_lat:.6f}, {map_lon:.6f}" if not map_used else "",
         help="Copy-paste from Google Maps (format: -6.2640685548010575, 106.99669724429697)",
         key="google_coords"
     )
 
-    # Parse Google Maps coordinates
-    try:
-        if google_coords and ',' in google_coords:
+    # Determine final coordinates based on user input
+    selected_lat = map_lat
+    selected_lon = map_lon
+    coordinate_source = "map (default)" if not map_used else "map (user selected)"
+    manual_used = False
+
+    # Parse Google Maps coordinates if provided
+    if google_coords and ',' in google_coords:
+        try:
             coords_parts = [x.strip() for x in google_coords.split(',')]
             if len(coords_parts) == 2:
                 manual_lat = float(coords_parts[0])
@@ -671,17 +677,25 @@ def render_point_based_filtering(db, schema, table):
                 if -90.0 <= manual_lat <= 90.0 and -180.0 <= manual_lon <= 180.0:
                     selected_lat = manual_lat
                     selected_lon = manual_lon
-                    st.success(f"✅ Valid coordinates: {manual_lat:.6f}, {manual_lon:.6f}")
+                    coordinate_source = "manual input"
+                    manual_used = True
+                    st.success(f"✅ Using manual coordinates")
                 else:
                     st.error("❌ Coordinates out of valid range (Lat: -90 to 90, Lon: -180 to 180)")
             else:
                 st.error("❌ Please enter coordinates in format: latitude, longitude")
-        elif google_coords and ',' not in google_coords:
-            st.error("❌ Please separate latitude and longitude with a comma")
-    except ValueError:
-        st.error("❌ Please enter valid numbers for coordinates")
-    except Exception as e:
-        st.error(f"❌ Error parsing coordinates: {str(e)}")
+        except ValueError:
+            st.error("❌ Please enter valid numbers for coordinates")
+        except Exception as e:
+            st.error(f"❌ Error parsing coordinates: {str(e)}")
+
+    # Single coordinate display
+    if manual_used:
+        st.info(f"🎯 **Current coordinates:** {selected_lat:.6f}, {selected_lon:.6f} (from {coordinate_source})")
+    elif map_used:
+        st.info(f"🎯 **Current coordinates:** {selected_lat:.6f}, {selected_lon:.6f} (from {coordinate_source})")
+    else:
+        st.info(f"🎯 **Current coordinates:** {selected_lat:.6f}, {selected_lon:.6f} (from {coordinate_source}) - Click map marker or enter coordinates manually")
 
     st.info(f"🎯 Search coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
     
