@@ -1,41 +1,22 @@
 import streamlit as st
 import pandas as pd
-import geopandas as gpd
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import plotly.express as px
 import plotly.graph_objects as go
-from plotly.subplots import make_subplots
 from sqlalchemy import create_engine, text
-from langchain_openai import ChatOpenAI
-import openai
+from openai import OpenAI
 import json
-import traceback
-from typing import Optional, Dict, List, Tuple, Any
-import warnings
-import asyncio
-import aiohttp
-from datetime import datetime, timedelta
 import re
-from bs4 import BeautifulSoup
+import asyncio
 import time
-import os
-from langchain.chat_models import ChatOpenAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-
-import folium
-from streamlit_folium import st_folium
-
-# import pygwalker as pyg
-from pygwalker.api.streamlit import StreamlitRenderer
+from datetime import datetime
+from typing import Dict, List, Optional, Tuple
+import warnings
 
 warnings.filterwarnings('ignore')
 
 # Set page config
 st.set_page_config(
-    page_title="RHR Market Research Agent",
-    page_icon="🏠",
+    page_title="RHR Multi-Agent Property AI",
+    page_icon="🏢",
     layout="wide",
     initial_sidebar_state="expanded"
 )
@@ -56,35 +37,7 @@ st.markdown("""
         padding-bottom: 0.5rem;
         margin: 1.5rem 0 1rem 0;
     }
-    .info-box {
-        background-color: #f0f2f6;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #3498db;
-        margin: 1rem 0;
-    }
-    .error-box {
-        background-color: #fee;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #e74c3c;
-        margin: 1rem 0;
-    }
-    .success-box {
-        background-color: #efe;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        border-left: 4px solid #27ae60;
-        margin: 1rem 0;
-    }
-    .market-status {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        color: white;
-        padding: 1rem;
-        border-radius: 0.5rem;
-        margin: 1rem 0;
-    }
-    .data-table-card {
+    .agent-card {
         background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
         color: white;
         padding: 1.5rem;
@@ -94,27 +47,89 @@ st.markdown("""
         cursor: pointer;
         transition: transform 0.3s ease;
     }
-    .data-table-card:hover {
+    .agent-card:hover {
         transform: translateY(-5px);
         box-shadow: 0 8px 25px rgba(0,0,0,0.15);
     }
-    .selected-table {
+    .selected-agent {
         background: linear-gradient(135deg, #27ae60 0%, #2ecc71 100%) !important;
         transform: translateY(-5px);
         box-shadow: 0 8px 25px rgba(0,0,0,0.15);
     }
-    .filter-section {
-        background-color: #f8f9fa;
-        padding: 1.5rem;
-        border-radius: 1rem;
+    .info-box {
+        background-color: #f0f2f6;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #3498db;
         margin: 1rem 0;
-        border: 1px solid #dee2e6;
+    }
+    .success-box {
+        background-color: #efe;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #27ae60;
+        margin: 1rem 0;
+    }
+    .error-box {
+        background-color: #fee;
+        padding: 1rem;
+        border-radius: 0.5rem;
+        border-left: 4px solid #e74c3c;
+        margin: 1rem 0;
+    }
+    .cross-agent-indicator {
+        background: linear-gradient(45deg, #ff6b6b, #4ecdc4, #45b7d1);
+        color: white;
+        padding: 0.5rem 1rem;
+        border-radius: 2rem;
+        font-weight: bold;
+        display: inline-block;
+        margin: 0.5rem 0;
     }
 </style>
 """, unsafe_allow_html=True)
 
+# Agent configurations
+AGENT_CONFIGS = {
+    'condo': {
+        'name': 'Condo Expert',
+        'icon': '🏠',
+        'table': 'condo_converted_2025',
+        'color': '#3498db',
+        'description': 'Residential condominium specialist'
+    },
+    'hotel': {
+        'name': 'Hotel Expert', 
+        'icon': '🏨',
+        'table': 'hotel_converted_2025',
+        'color': '#e74c3c',
+        'description': 'Hospitality property specialist'
+    },
+    'hospital': {
+        'name': 'Hospital Expert',
+        'icon': '🏥',
+        'table': 'hospital_converted_2025',
+        'color': '#9b59b6',
+        'description': 'Healthcare facility specialist'
+    },
+    'office': {
+        'name': 'Office Expert',
+        'icon': '🏢',
+        'table': 'office_converted_2025',
+        'color': '#f39c12',
+        'description': 'Commercial office specialist'
+    },
+    'retail': {
+        'name': 'Retail Expert',
+        'icon': '🏬',
+        'table': 'retail_converted_2025',
+        'color': '#27ae60',
+        'description': 'Retail property specialist'
+    }
+}
+
 class DatabaseConnection:
-    """Handle PostgreSQL/PostGIS database connections"""
+    """Handle PostgreSQL database connections"""
     
     def __init__(self):
         self.engine = None
@@ -132,7 +147,6 @@ class DatabaseConnection:
                 conn.execute(text("SELECT 1"))
             
             self.connection_status = True
-            st.session_state.schema = schema
             return True, "Connection successful!"
         
         except Exception as e:
@@ -145,1979 +159,1418 @@ class DatabaseConnection:
             if not self.connection_status:
                 return None, "No database connection established"
             
-            df = pd.read_sql(query, self.engine)
-            return df, "Query executed successfully"
+            with self.engine.connect() as conn:
+                result = conn.execute(text(query))
+                rows = []
+                columns = list(result.keys())
+                
+                for row in result:
+                    row_dict = {}
+                    for i, value in enumerate(row):
+                        row_dict[columns[i]] = value
+                    rows.append(row_dict)
+                
+                if rows:
+                    df = pd.DataFrame(rows)
+                else:
+                    df = pd.DataFrame(columns=columns)
+                
+                return df, "Query executed successfully"
         
         except Exception as e:
             return None, f"Query execution failed: {str(e)}"
     
-    def get_table_columns(self, table_name: str, schema: str = 'public') -> tuple:
-        """Get column information for a specific table"""
+    def get_unique_geographic_values(self, column: str, parent_filter: dict = None, table_name: str = None):
+        """Get unique values for geographic columns with optional parent filtering"""
         try:
-            query = f"""
-            SELECT column_name, data_type, is_nullable
-            FROM information_schema.columns 
-            WHERE table_schema = '{schema}' AND table_name = '{table_name}'
-            ORDER BY ordinal_position
-            """
-            df, msg = self.execute_query(query)
-            return df, msg
+            if not table_name:
+                return []
+            
+            base_query = f"SELECT DISTINCT {column} FROM {table_name} WHERE {column} IS NOT NULL"
+            
+            if parent_filter:
+                if column == 'wadmkk' and 'wadmpr' in parent_filter:
+                    provinces = parent_filter['wadmpr']
+                    escaped_provinces = [p.replace("'", "''") for p in provinces]
+                    province_list = "', '".join(escaped_provinces)
+                    base_query += f" AND wadmpr IN ('{province_list}')"
+                elif column == 'wadmkc' and 'wadmkk' in parent_filter:
+                    regencies = parent_filter['wadmkk']
+                    escaped_regencies = [r.replace("'", "''") for r in regencies]
+                    regency_list = "', '".join(escaped_regencies)
+                    base_query += f" AND wadmkk IN ('{regency_list}')"
+            
+            base_query += f" ORDER BY {column}"
+            
+            with self.engine.connect() as conn:
+                result = conn.execute(text(base_query))
+                values = [row[0] for row in result.fetchall()]
+                return values
         except Exception as e:
-            return None, f"Failed to get table columns: {str(e)}"
+            st.error(f"Failed to load {column} options: {str(e)}")
+            return []
+
+class CrossAgentQueryParser:
+    """Parse cross-agent query syntax"""
     
-    def get_column_unique_values(self, table_name: str, column_name: str, schema: str = 'public', limit: int = 1000) -> tuple:
-        """Get unique values for a specific column"""
+    def __init__(self):
+        self.patterns = {
+            'comparison': r'#(\w+)(\s+vs\s+\w+)+',
+            'consultation': r'#(\w+)\s+consult\s+([\w\s]+)',
+            'market_analysis': r'#all\s+(.+)',
+            'impact': r'#(\w+)\s+impact\s+(\w+)'
+        }
+    
+    def parse_query(self, question: str) -> dict:
+        """Parse user query for cross-agent triggers"""
+        if not question.startswith('#'):
+            return {'type': 'single_agent', 'agents': []}
+        
+        for query_type, pattern in self.patterns.items():
+            match = re.match(pattern, question.lower())
+            if match:
+                return self._extract_agents(query_type, match, question)
+        
+        return {'type': 'invalid', 'error': 'Invalid cross-agent syntax'}
+    
+    def _extract_agents(self, query_type: str, match, original_query: str) -> dict:
+        """Extract agent names from parsed query"""
+        if query_type == 'comparison':
+            # Extract all agents from "agent1 vs agent2 vs agent3"
+            agents_text = match.group(0)[1:]  # Remove #
+            agents = re.findall(r'(\w+)', agents_text)
+            # Filter valid agents
+            valid_agents = [a for a in agents if a in AGENT_CONFIGS]
+            return {
+                'type': 'comparison',
+                'agents': valid_agents,
+                'primary': valid_agents[0] if valid_agents else None,
+                'secondary': valid_agents[1:] if len(valid_agents) > 1 else [],
+                'original_query': original_query
+            }
+        elif query_type == 'consultation':
+            primary = match.group(1)
+            secondary_text = match.group(2)
+            secondary = re.findall(r'(\w+)', secondary_text)
+            # Filter valid agents
+            valid_primary = primary if primary in AGENT_CONFIGS else None
+            valid_secondary = [a for a in secondary if a in AGENT_CONFIGS]
+            return {
+                'type': 'consultation',
+                'agents': [valid_primary] + valid_secondary if valid_primary else valid_secondary,
+                'primary': valid_primary,
+                'secondary': valid_secondary,
+                'original_query': original_query
+            }
+        elif query_type == 'market_analysis':
+            return {
+                'type': 'market_analysis',
+                'agents': list(AGENT_CONFIGS.keys()),
+                'primary': 'office',  # Default primary for market analysis
+                'secondary': [a for a in AGENT_CONFIGS.keys() if a != 'office'],
+                'original_query': original_query
+            }
+        elif query_type == 'impact':
+            agent1 = match.group(1)
+            agent2 = match.group(2)
+            valid_agents = [a for a in [agent1, agent2] if a in AGENT_CONFIGS]
+            return {
+                'type': 'impact',
+                'agents': valid_agents,
+                'primary': valid_agents[1] if len(valid_agents) > 1 else valid_agents[0] if valid_agents else None,
+                'secondary': [valid_agents[0]] if len(valid_agents) > 1 else [],
+                'original_query': original_query
+            }
+        
+        return {'type': 'invalid', 'error': 'Could not parse query'}
+
+class PropertyAIAgent:
+    """Individual property AI agent"""
+    
+    def __init__(self, api_key: str, agent_type: str, db_connection: DatabaseConnection):
+        self.client = OpenAI(api_key=api_key)
+        self.agent_type = agent_type
+        self.config = AGENT_CONFIGS[agent_type]
+        self.table_name = self.config['table']
+        self.db_connection = db_connection
+        self.system_prompt = self._create_system_prompt()
+    
+    def _create_system_prompt(self) -> str:
+        """Create agent-specific system prompt"""
+        
+        prompts = {
+            'retail': """
+You are a Retail Property Expert AI for RHR specializing in commercial retail spaces.
+Table: retail_converted_2025
+
+RETAIL EXPERTISE:
+- Shopping malls, retail outlets, commercial spaces
+- Net Lettable Area (NLA) and Gross Floor Area (GFA) analysis
+- Retail pricing trends and market analysis
+- Developer and project performance
+- Grade classification (A, B, C grade retail spaces)
+
+COLUMN DETAILS:
+Project Information:
+- project_name: Retail development name
+- address: Property address
+- developer: Development company
+- project_status: Development status
+- completionyear: Year completed
+- q: Quarter of completion
+
+Property Specifications:
+- grade: Property grade (A, B, C)
+- nla: Net Lettable Area (rentable space)
+- gfa: Gross Floor Area (total floor space)
+
+Pricing Data:
+- price_2016 through price_2025: Annual price data
+- price_avg: Average price across years
+
+Location Data:
+- area: General area/district
+- precinct: Specific precinct
+- wadmpr: Province
+- wadmkk: Regency/City  
+- wadmkc: District
+- latitude, longitude: Coordinates
+
+RULES:
+1. Always include readable column names in SELECT
+2. Use proper JOINs when needed
+3. Handle NULL values appropriately
+4. Add geographic filters when context provided
+5. Include LIMIT for large result sets
+6. For map queries: SELECT id, latitude, longitude, project_name, address, grade, price_avg
+7. Use ILIKE for text searches
+8. Group by relevant columns for aggregations
+""",
+            
+            'hospital': """
+You are a Hospital Property Expert AI for RHR specializing in healthcare facilities.
+Table: hospital_converted_2025
+
+HOSPITAL EXPERTISE:
+- Healthcare facility analysis
+- Medical capacity and services
+- Hospital grades and ownership types
+- Healthcare accessibility and coverage
+- BPJS and public health services
+
+COLUMN DETAILS:
+Facility Information:
+- object_name: Hospital/clinic name
+- type: Healthcare facility type
+- grade: Hospital grade/classification
+- ownership: Ownership type (public/private)
+
+Capacity & Infrastructure:
+- beds_capacity: Number of beds (INTEGER)
+- land_area: Land area size
+- building_area: Building area size
+
+Services:
+- bpjs: BPJS coverage (social health insurance)
+- kb_gratis: Free family planning services
+
+Location Data:
+- wadmpr: Province
+- wadmkk: Regency/City
+- wadmkc: District
+- latitude, longitude: Coordinates
+
+RULES:
+1. beds_capacity is INTEGER - use proper numeric operations
+2. Handle NULL values in text fields
+3. Use proper grouping for capacity analysis
+4. Geographic filtering with wadm* columns
+5. For map queries: SELECT id, latitude, longitude, object_name, type, grade, beds_capacity
+6. Use COUNT(*) for facility counts
+7. Use SUM(beds_capacity) for total capacity
+8. ILIKE for text searches
+""",
+            
+            'office': """
+You are an Office Property Expert AI for RHR specializing in commercial office spaces.
+Table: office_converted_2025
+
+OFFICE EXPERTISE:
+- Commercial office building analysis
+- Grade A, B, C office classifications  
+- Office rental rates and pricing trends
+- Corporate real estate and investment analysis
+- Strata Ground Area (SGA) and Gross Floor Area (GFA)
+
+COLUMN DETAILS:
+Building Information:
+- building_name: Office building name
+- grade: Building grade (A, B, C)
+- project_type: Type of office development
+- project_status: Development status
+- completionyear: Year completed
+- q: Quarter of completion
+
+Property Specifications:
+- sga: Strata Ground Area
+- gfa: Gross Floor Area
+- "owner/developer": Building owner/developer (note: column has slash in name, use quotes)
+
+Pricing Data (NUMERIC):
+- price_2016 through price_2025: Annual pricing (FLOAT)
+- price_avg: Average price (FLOAT)
+
+Location Data:
+- area: General area/district
+- precinct: Specific precinct
+- wadmpr: Province
+- wadmkk: Regency/City
+- wadmkc: District
+- latitude, longitude: Coordinates
+
+RULES:
+1. Price columns are NUMERIC - use proper math operations
+2. Column name "owner/developer" needs quotes: "owner/developer"
+3. Use AVG(), MIN(), MAX() for price analysis
+4. Group by grade for classification analysis
+5. For map queries: SELECT id, latitude, longitude, building_name, grade, price_avg
+6. Geographic filtering with wadm* columns
+7. Handle NULL values in pricing data
+8. Use BETWEEN for price ranges
+""",
+            
+            'condo': """
+You are a Condominium Property Expert AI for RHR specializing in residential condominiums.
+Table: condo_converted_2025
+
+CONDO EXPERTISE:
+- Residential condominium analysis
+- Developer performance and project delivery
+- Unit counts and residential capacity
+- Condo grades and market positioning
+- Residential area analysis
+
+COLUMN DETAILS:
+Project Information:
+- project_name: Condominium project name
+- address: Property address
+- developer: Development company
+- project_status: Development status
+- completionyear: Year completed
+- q: Quarter of completion
+
+Property Specifications:
+- grade: Condo grade classification
+- unit: Number of units (INTEGER)
+
+Location Data:
+- area: General area/district
+- precinct: Specific precinct
+- wadmpr: Province
+- wadmkk: Regency/City
+- wadmkc: District
+- latitude, longitude: Coordinates
+
+RULES:
+1. unit is INTEGER - use SUM() for total units
+2. No pricing data available in this table
+3. Use COUNT(*) for project counts
+4. Group by developer for performance analysis
+5. For map queries: SELECT id, latitude, longitude, project_name, address, grade, unit
+6. Geographic filtering with wadm* columns
+7. Use ILIKE for text searches
+8. Handle NULL values appropriately
+""",
+            
+            'hotel': """
+You are a Hotel Property Expert AI for RHR specializing in hospitality properties.
+Table: hotel_converted_2025
+
+HOTEL EXPERTISE:
+- Hotel and hospitality property analysis
+- Star rating classifications (1-5 stars)
+- Hotel management and operations
+- Hospitality pricing and market trends
+- Event facilities and capacity analysis
+
+COLUMN DETAILS:
+Hotel Information:
+- project_name: Hotel name
+- address: Property address
+- developer: Development company
+- management: Hotel management company
+- star: Star rating (INTEGER 1-5)
+- concept: Hotel concept/type
+
+Capacity & Facilities:
+- unit_planned: Planned units/rooms
+- unit_developed: Developed units/rooms (INTEGER)
+- floors: Number of floors
+- ballroom_capacity: Event space capacity (INTEGER)
+
+Pricing Data:
+- price_2016 through price_2025: Annual pricing data
+- price_avg: Average price across years
+
+Project Details:
+- project_status: Development status
+- completionyear: Year completed
+- q: Quarter of completion
+
+Location Data:
+- area: General area/district
+- precinct: Specific precinct
+- wadmpr: Province
+- wadmkk: Regency/City
+- wadmkc: District
+- latitude, longitude: Coordinates
+
+RULES:
+1. star is INTEGER - use AVG() for average ratings
+2. unit_developed and ballroom_capacity are INTEGER
+3. Price columns may be text - handle appropriately
+4. Use star rating for quality analysis
+5. For map queries: SELECT id, latitude, longitude, project_name, address, star, concept
+6. Geographic filtering with wadm* columns
+7. Group by star for rating analysis
+8. Handle NULL values in capacity fields
+"""
+        }
+        
+        base_prompt = f"""
+You are a {self.agent_type.title()} Property Expert AI for RHR.
+Table: {self.table_name}
+
+You have one helper function:
+  create_map_visualization(sql_query: string, title: string)
+    → Returns a map of properties when called.
+
+**RULES**  
+- If the user's question asks for a map, "peta", or "visualisasi lokasi", you **must** respond *only* with a function call to `create_map_visualization` (no SQL text).  
+- Otherwise you **must not** call any function, and instead return *only* a PostgreSQL query (no explanations).
+
+{prompts.get(self.agent_type, '')}
+
+Generate ONLY the PostgreSQL query, no explanations.
+"""
+        
+        return base_prompt
+    
+    def generate_query(self, user_question: str, geographic_context: str = "") -> dict:
+        """Generate SQL query using o4-mini"""
+        
+        is_map_request = bool(re.search(r"\b(map|peta|visualisasi lokasi)\b", user_question, re.I))
+        
+        tools = [{
+            "type": "function",
+            "name": "create_map_visualization",
+            "description": "Create a map of properties. Only use when the user explicitly requests location visualization.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "sql_query": {
+                        "type": "string",
+                        "description": f"SQL query including id, latitude, longitude and relevant columns for {self.table_name}"
+                    },
+                    "title": { "type": "string" }
+                },
+                "required": ["sql_query", "title"],
+                "additionalProperties": False
+            },
+            "strict": True
+        }]
+        
+        messages = [
+            {"role": "system", "content": self.system_prompt}
+        ]
+        if geographic_context:
+            messages.append({"role": "user", "content": geographic_context})
+        messages.append({"role": "user", "content": user_question})
+        
         try:
-            query = f"""
-            SELECT DISTINCT "{column_name}" as unique_value
-            FROM "{schema}"."{table_name}"
-            WHERE "{column_name}" IS NOT NULL
-            ORDER BY "{column_name}"
-            LIMIT {limit}
-            """
-            df, msg = self.execute_query(query)
-            if df is not None:
-                return df['unique_value'].tolist(), msg
-            return None, msg
+            response = self.client.responses.create(
+                model="o4-mini",
+                reasoning={"effort": "low"},
+                input=messages,
+                tools=tools,
+                tool_choice=(
+                    {"type": "function", "name": "create_map_visualization"}
+                    if is_map_request else
+                    "none"
+                ),
+                max_output_tokens=500
+            )
+            
+            return {'success': True, 'response': response}
         except Exception as e:
-            return None, f"Failed to get unique values: {str(e)}"
+            return {'success': False, 'error': str(e)}
+    
+    def format_response(self, user_question: str, query_results: pd.DataFrame, sql_query: str) -> str:
+        """Format response using GPT-4.1-mini"""
+        try:
+            prompt = f"""User asked: {user_question}
 
-class DataChatbot:
-    """AI chatbot for data analysis and exploration"""
-    
-    def __init__(self, api_key: str):
-        self.llm = ChatOpenAI(
-            model="gpt-4.1-mini",
-            api_key=api_key,
-            temperature=0.3,
-            max_tokens=2000,
-            streaming=True
-        )
-    
-    def generate_data_summary(self, df: pd.DataFrame) -> str:
-        """Generate comprehensive data summary including more details"""
-        
-        # Basic info
-        summary = f"COMPLETE DATASET ANALYSIS:\n"
-        summary += f"- Total records: {len(df):,}\n"
-        summary += f"- Total columns: {len(df.columns)}\n"
-        summary += f"- Memory usage: {df.memory_usage(deep=True).sum() / 1024**2:.2f} MB\n\n"
-        
-        # ALL Column information
-        summary += f"ALL COLUMNS: {list(df.columns)}\n\n"
-        
-        # Complete statistical analysis
-        numeric_cols = df.select_dtypes(include=[np.number]).columns
-        if len(numeric_cols) > 0:
-            summary += "COMPLETE STATISTICAL ANALYSIS:\n"
-            desc_stats = df[numeric_cols].describe()
-            summary += desc_stats.to_string()
-            summary += "\n\n"
-        
-        # Complete categorical analysis
-        categorical_cols = df.select_dtypes(include=['object']).columns
-        if len(categorical_cols) > 0:
-            summary += "COMPLETE CATEGORICAL ANALYSIS:\n"
-            for col in categorical_cols:
-                value_counts = df[col].value_counts()
-                summary += f"\n{col} (Total unique: {df[col].nunique()}):\n"
-                summary += value_counts.to_string()
-                summary += "\n"
-        
-        # Data quality for ALL records
-        summary += f"\nDATA QUALITY ACROSS ALL {len(df):,} RECORDS:\n"
-        missing_data = df.isnull().sum()
-        for col, missing_count in missing_data.items():
-            if missing_count > 0:
-                pct = (missing_count / len(df)) * 100
-                summary += f"- {col}: {missing_count:,} missing ({pct:.1f}%)\n"
-        
-        return summary
-    
-    def create_system_prompt(self, df: pd.DataFrame) -> str:
-        """Create comprehensive system prompt with FULL dataset"""
-        
-        data_summary = self.generate_data_summary(df)
-        
-        # Convert full dataset to JSON for AI analysis
-        full_data_json = df.to_json(orient='records', date_format='iso')
-        
-        system_prompt = f"""
-        You are an Indonesian expert data analyst assistant specializing in real estate and property data analysis. 
-        You have access to the COMPLETE dataset with ALL {len(df):,} records for comprehensive analysis.
-        
-        DATASET SUMMARY:
-        {data_summary}
-        
-        COMPLETE DATASET (JSON format):
-        {full_data_json}
-        
-        YOU CAN PERFORM:
-        1. Analysis on ALL {len(df):,} records, not just samples
-        2. Calculations across the entire dataset
-        3. Specific property lookups by any criteria
-        4. Grouping and aggregation analysis
-        5. Statistical analysis on complete data
-        6. Pattern identification across all records
-        7. Outlier detection in the full dataset
-        8. Correlation analysis on all data points
-        
-        ANALYSIS CAPABILITIES:
-        - Calculate statistics on any subset of the data
-        - Find specific properties matching criteria
-        - Identify highest/lowest values across all records
-        - Perform grouping analysis (by location, price range, etc.)
-        - Detect patterns and anomalies in the complete dataset
-        - Compare properties across the entire dataset
-        - Generate insights based on ALL available data
-        
-        INSTRUCTIONS:
-        - Always analyze the COMPLETE dataset, not just samples
-        - Provide specific numbers and examples from the full data
-        - When asked about "all properties" or "total", use the complete dataset
-        - Reference specific records when providing examples
-        - Perform calculations across all {len(df):,} records
-        - Base all insights on the complete dataset analysis
-        - You can only answer with Bahasa Indonesia
-        
-        Remember: You have access to every single record in this dataset for comprehensive analysis.
-        """
-        
-        return system_prompt
+SQL Query executed: {sql_query}
+Results: {query_results.to_dict('records') if len(query_results) > 0 else 'No results found'}
 
-def initialize_session_state():
-    """Initialize Streamlit session state variables"""
+Provide clear answer in Bahasa Indonesia. Focus on business insights, not technical details."""
+
+            response = self.client.chat.completions.create(
+                model="gpt-4.1-mini",
+                stream=True,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": f"You are a {self.agent_type.title()} Property Expert. Always respond in Bahasa Indonesia with clear, actionable insights."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                max_tokens=2000,
+                temperature=0.3
+            )
+            
+            full_response = ""
+            response_container = st.empty()
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    full_response += chunk.choices[0].delta.content
+                    response_container.markdown(full_response + "▌")
+            response_container.markdown(full_response)
+            return full_response
+            
+        except Exception as e:
+            return f"Maaf, terjadi kesalahan dalam memproses hasil: {str(e)}"
+    
+    def create_map_visualization(self, query_data: pd.DataFrame, title: str = "Property Locations") -> str:
+        """Create map visualization from query data"""
+        try:
+            if 'latitude' not in query_data.columns or 'longitude' not in query_data.columns:
+                return "Error: Data tidak memiliki kolom latitude dan longitude untuk visualisasi peta."
+            
+            map_df = query_data.copy()
+            map_df = map_df.dropna(subset=['latitude', 'longitude'])
+            
+            map_df['latitude'] = pd.to_numeric(map_df['latitude'], errors='coerce')
+            map_df['longitude'] = pd.to_numeric(map_df['longitude'], errors='coerce')
+            
+            map_df = map_df[
+                (map_df['latitude'] >= -90) & (map_df['latitude'] <= 90) &
+                (map_df['longitude'] >= -180) & (map_df['longitude'] <= 180)
+            ]
+            
+            if len(map_df) == 0:
+                return "Error: Tidak ada data dengan koordinat yang valid untuk visualisasi peta."
+            
+            fig = go.Figure()
+            
+            # Create hover text based on available columns
+            hover_text = []
+            for idx, row in map_df.iterrows():
+                text_parts = []
+                if 'id' in row:
+                    text_parts.append(f"ID: {row['id']}")
+                
+                # Agent-specific display columns
+                if self.agent_type == 'condo' and 'project_name' in row:
+                    text_parts.append(f"Project: {row['project_name']}")
+                elif self.agent_type == 'hotel' and 'project_name' in row:
+                    text_parts.append(f"Hotel: {row['project_name']}")
+                elif self.agent_type == 'office' and 'building_name' in row:
+                    text_parts.append(f"Building: {row['building_name']}")
+                elif self.agent_type == 'hospital' and 'object_name' in row:
+                    text_parts.append(f"Hospital: {row['object_name']}")
+                elif self.agent_type == 'retail' and 'project_name' in row:
+                    text_parts.append(f"Retail: {row['project_name']}")
+                
+                if 'grade' in row:
+                    text_parts.append(f"Grade: {row['grade']}")
+                if 'wadmpr' in row:
+                    text_parts.append(f"Province: {row['wadmpr']}")
+                
+                hover_text.append("<br>".join(text_parts))
+            
+            # Color by agent type
+            color = AGENT_CONFIGS[self.agent_type]['color']
+            
+            fig.add_trace(go.Scattermapbox(
+                lat=map_df['latitude'],
+                lon=map_df['longitude'],
+                mode='markers',
+                marker=dict(size=8, color=color),
+                text=hover_text,
+                hovertemplate='%{text}<extra></extra>',
+                name=f'{self.agent_type.title()} Properties'
+            ))
+            
+            center_lat = map_df['latitude'].mean()
+            center_lon = map_df['longitude'].mean()
+            
+            fig.update_layout(
+                mapbox=dict(
+                    style="open-street-map",
+                    center=dict(lat=center_lat, lon=center_lon),
+                    zoom=8
+                ),
+                height=500,
+                margin=dict(l=0, r=0, t=30, b=0),
+                title=title
+            )
+            
+            st.plotly_chart(fig, use_container_width=True)
+            
+            return f"✅ Peta berhasil ditampilkan dengan {len(map_df)} properti {self.agent_type}."
+            
+        except Exception as e:
+            return f"Error membuat visualisasi peta: {str(e)}"
+
+class AgentChatManager:
+    """Manage chat histories for all agents"""
+    
+    def __init__(self):
+        self.chat_histories = {agent: [] for agent in AGENT_CONFIGS.keys()}
+        self.current_agent = None
+    
+    def switch_agent(self, new_agent: str):
+        """Switch to different agent"""
+        self.current_agent = new_agent
+        return self.chat_histories[new_agent]
+    
+    def add_message(self, agent_type: str, role: str, content: str):
+        """Add message to agent's chat history"""
+        self.chat_histories[agent_type].append({
+            'role': role,
+            'content': content,
+            'timestamp': datetime.now().isoformat()
+        })
+    
+    def get_chat_status(self) -> dict:
+        """Get overview of all chat sessions"""
+        return {
+            agent: len(history) 
+            for agent, history in self.chat_histories.items()
+        }
+
+class MultiAgentManager:
+    """Manage multiple property AI agents"""
+    
+    def __init__(self, api_key: str, db_connection: DatabaseConnection):
+        self.api_key = api_key
+        self.db_connection = db_connection
+        self.agents = {}
+        self.parser = CrossAgentQueryParser()
+        self._initialize_agents()
+    
+    def _initialize_agents(self):
+        """Initialize all agents"""
+        for agent_type in AGENT_CONFIGS.keys():
+            self.agents[agent_type] = PropertyAIAgent(
+                self.api_key, 
+                agent_type, 
+                self.db_connection
+            )
+    
+    def get_agent(self, agent_type: str) -> PropertyAIAgent:
+        """Get specific agent"""
+        return self.agents.get(agent_type)
+    
+    def process_query(self, question: str, current_agent: str, geographic_context: str = "") -> dict:
+        """Process query - either single agent or cross-agent"""
+        
+        # Check if it's a cross-agent query
+        parsed = self.parser.parse_query(question)
+        
+        if parsed['type'] == 'single_agent':
+            # Single agent query
+            return self._process_single_agent_query(question, current_agent, geographic_context)
+        elif parsed['type'] == 'invalid':
+            return {
+                'type': 'error',
+                'message': f"Invalid cross-agent syntax: {parsed.get('error', 'Unknown error')}"
+            }
+        else:
+            # Cross-agent query
+            return self._process_cross_agent_query(parsed, geographic_context)
+    
+    def _process_single_agent_query(self, question: str, agent_type: str, geographic_context: str) -> dict:
+        """Process single agent query"""
+        try:
+            agent = self.get_agent(agent_type)
+            if not agent:
+                return {
+                    'type': 'error',
+                    'message': f"Agent {agent_type} not found"
+                }
+            
+            # Generate query
+            query_result = agent.generate_query(question, geographic_context)
+            
+            if not query_result['success']:
+                return {
+                    'type': 'error',
+                    'message': f"Query generation failed: {query_result['error']}"
+                }
+            
+            response = query_result['response']
+            
+            # Check if AI called a function (map visualization)
+            if response and hasattr(response, 'output') and response.output:
+                for output_item in response.output:
+                    if hasattr(output_item, 'type') and output_item.type == "function_call":
+                        if output_item.name == "create_map_visualization":
+                            # Parse function arguments
+                            args = json.loads(output_item.arguments)
+                            sql_query = args.get("sql_query")
+                            map_title = args.get("title", "Property Locations")
+                            
+                            # Execute the SQL query
+                            result_df, query_msg = self.db_connection.execute_query(sql_query)
+                            
+                            if result_df is not None and len(result_df) > 0:
+                                # Create map visualization
+                                map_result = agent.create_map_visualization(result_df, map_title)
+                                
+                                return {
+                                    'type': 'map',
+                                    'agent': agent_type,
+                                    'sql_query': sql_query,
+                                    'data': result_df,
+                                    'message': map_result,
+                                    'title': map_title
+                                }
+                            else:
+                                return {
+                                    'type': 'error',
+                                    'message': f"Map query failed: {query_msg}"
+                                }
+            
+            # Regular SQL query
+            if hasattr(response, 'output_text'):
+                sql_query = response.output_text.strip()
+                
+                if sql_query and "SELECT" in sql_query.upper():
+                    # Execute the query
+                    result_df, query_msg = self.db_connection.execute_query(sql_query)
+                    
+                    if result_df is not None:
+                        # Format response
+                        formatted_response = agent.format_response(question, result_df, sql_query)
+                        
+                        return {
+                            'type': 'query',
+                            'agent': agent_type,
+                            'sql_query': sql_query,
+                            'data': result_df,
+                            'message': formatted_response
+                        }
+                    else:
+                        return {
+                            'type': 'error',
+                            'message': f"Query execution failed: {query_msg}"
+                        }
+                else:
+                    return {
+                        'type': 'error',
+                        'message': "No valid SQL query generated"
+                    }
+            
+            return {
+                'type': 'error',
+                'message': "No response from AI"
+            }
+            
+        except Exception as e:
+            return {
+                'type': 'error',
+                'message': f"Error processing query: {str(e)}"
+            }
+    
+    def _process_cross_agent_query(self, parsed_query: dict, geographic_context: str) -> dict:
+        """Process cross-agent query"""
+        try:
+            agents = parsed_query['agents']
+            primary_agent = parsed_query['primary']
+            query_type = parsed_query['type']
+            original_query = parsed_query['original_query']
+            
+            if not agents or not primary_agent:
+                return {
+                    'type': 'error',
+                    'message': "Invalid agents specified in cross-agent query"
+                }
+            
+            # Remove the cross-agent syntax from the query
+            clean_query = re.sub(r'^#\w+(\s+(vs|consult|impact)\s+\w+)*\s*', '', original_query, flags=re.IGNORECASE)
+            
+            # Process each agent
+            agent_results = {}
+            errors = []
+            
+            for agent_type in agents:
+                if agent_type not in AGENT_CONFIGS:
+                    errors.append(f"Invalid agent: {agent_type}")
+                    continue
+                
+                try:
+                    # Generate agent-specific query
+                    agent_query = self._generate_agent_specific_query(clean_query, agent_type, query_type)
+                    
+                    # Process the query
+                    result = self._process_single_agent_query(agent_query, agent_type, geographic_context)
+                    
+                    if result['type'] == 'error':
+                        errors.append(f"{agent_type}: {result['message']}")
+                    else:
+                        agent_results[agent_type] = result
+                        
+                except Exception as e:
+                    errors.append(f"{agent_type}: {str(e)}")
+            
+            # Check if we have enough results
+            if not agent_results:
+                return {
+                    'type': 'error',
+                    'message': f"All agents failed. Errors: {'; '.join(errors)}"
+                }
+            
+            # Combine results
+            combined_result = self._combine_cross_agent_results(
+                agent_results, 
+                primary_agent, 
+                query_type, 
+                clean_query,
+                errors
+            )
+            
+            return combined_result
+            
+        except Exception as e:
+            return {
+                'type': 'error',
+                'message': f"Cross-agent query failed: {str(e)}"
+            }
+    
+    def _generate_agent_specific_query(self, query: str, agent_type: str, query_type: str) -> str:
+        """Generate agent-specific query based on cross-agent type"""
+        
+        if query_type == 'comparison':
+            # For comparison, ask each agent about their domain
+            domain_map = {
+                'condo': 'residential condominium',
+                'hotel': 'hotel',
+                'office': 'office building',
+                'hospital': 'hospital',
+                'retail': 'retail space'
+            }
+            domain = domain_map.get(agent_type, agent_type)
+            return f"Analyze {domain} data for: {query}"
+        
+        elif query_type == 'consultation':
+            # For consultation, the primary agent asks about the query
+            return f"Provide data analysis for: {query}"
+        
+        elif query_type == 'market_analysis':
+            # For market analysis, each agent analyzes their market
+            return f"Provide market analysis for {agent_type} properties: {query}"
+        
+        elif query_type == 'impact':
+            # For impact analysis, analyze the relationship
+            return f"Analyze impact relationship: {query}"
+        
+        return query
+    
+    def _combine_cross_agent_results(self, agent_results: dict, primary_agent: str, 
+                                   query_type: str, query: str, errors: list) -> dict:
+        """Combine results from multiple agents"""
+        
+        try:
+            # Get primary agent for final formatting
+            primary_agent_obj = self.get_agent(primary_agent)
+            
+            # Combine all data
+            combined_data = pd.DataFrame()
+            agent_summaries = {}
+            
+            for agent_type, result in agent_results.items():
+                if result['type'] == 'query' and 'data' in result:
+                    # Add agent identifier to data
+                    agent_data = result['data'].copy()
+                    agent_data['source_agent'] = agent_type
+                    
+                    # Combine data
+                    if combined_data.empty:
+                        combined_data = agent_data
+                    else:
+                        # For cross-agent queries, we might want to keep data separate
+                        combined_data = pd.concat([combined_data, agent_data], ignore_index=True)
+                    
+                    # Store summary
+                    agent_summaries[agent_type] = {
+                        'message': result['message'],
+                        'sql_query': result['sql_query'],
+                        'row_count': len(result['data'])
+                    }
+            
+            # Format combined response
+            combined_message = self._format_cross_agent_response(
+                agent_summaries, 
+                primary_agent, 
+                query_type, 
+                query, 
+                primary_agent_obj,
+                errors
+            )
+            
+            return {
+                'type': 'cross_agent',
+                'primary_agent': primary_agent,
+                'query_type': query_type,
+                'agents': list(agent_results.keys()),
+                'data': combined_data,
+                'message': combined_message,
+                'agent_summaries': agent_summaries,
+                'errors': errors
+            }
+            
+        except Exception as e:
+            return {
+                'type': 'error',
+                'message': f"Failed to combine cross-agent results: {str(e)}"
+            }
+    
+    def _format_cross_agent_response(self, agent_summaries: dict, primary_agent: str, 
+                                   query_type: str, query: str, primary_agent_obj: PropertyAIAgent,
+                                   errors: list) -> str:
+        """Format cross-agent response using primary agent"""
+        
+        try:
+            # Create summary of all agent results
+            summary_text = f"Cross-agent {query_type} analysis for: {query}\n\n"
+            
+            # Add results from each agent
+            for agent_type, summary in agent_summaries.items():
+                agent_name = AGENT_CONFIGS[agent_type]['name']
+                summary_text += f"=== {agent_name} Analysis ===\n"
+                summary_text += f"Data points: {summary['row_count']}\n"
+                summary_text += f"Analysis: {summary['message']}\n\n"
+            
+            # Add errors if any
+            if errors:
+                summary_text += f"=== Warnings ===\n"
+                for error in errors:
+                    summary_text += f"- {error}\n"
+                summary_text += "\n"
+            
+            # Use primary agent to format the final response
+            prompt = f"""
+Multiple property experts have analyzed the query: {query}
+
+Query Type: {query_type}
+
+Results from different experts:
+{summary_text}
+
+Please provide a comprehensive analysis in Bahasa Indonesia that:
+1. Synthesizes insights from all experts
+2. Highlights key findings and patterns
+3. Provides actionable recommendations
+4. Compares different property types where relevant
+
+Focus on business insights and strategic recommendations.
+"""
+            
+            response = primary_agent_obj.client.chat.completions.create(
+                model="gpt-4.1-mini",
+                stream=True,
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": f"You are the lead {primary_agent.title()} Property Expert coordinating a multi-agent analysis. Provide comprehensive insights in Bahasa Indonesia."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                max_tokens=3000,
+                temperature=0.3
+            )
+            
+            full_response = ""
+            response_container = st.empty()
+            for chunk in response:
+                if chunk.choices[0].delta.content:
+                    full_response += chunk.choices[0].delta.content
+                    response_container.markdown(full_response + "▌")
+            response_container.markdown(full_response)
+            
+            return full_response
+            
+        except Exception as e:
+            return f"Error formatting cross-agent response: {str(e)}"
+
+
+def check_authentication():
+    """Check if user is authenticated"""
+    return st.session_state.get('authenticated', False)
+
+def login():
+    """Handle user login"""
+    st.markdown('<div class="section-header">🔐 Login</div>', unsafe_allow_html=True)
+    
+    try:
+        valid_username = st.secrets["auth"]["username"]
+        valid_password = st.secrets["auth"]["password"]
+    except KeyError:
+        st.error("Authentication credentials not found in secrets.toml")
+        return False
+    
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submit_button = st.form_submit_button("Login")
+        
+        if submit_button:
+            if username == valid_username and password == valid_password:
+                st.session_state.authenticated = True
+                st.success("Login successful!")
+                st.rerun()
+            else:
+                st.error("Invalid username or password")
+    
+    return False
+
+def initialize_database():
+    """Initialize database connection"""
     if 'db_connection' not in st.session_state:
         st.session_state.db_connection = DatabaseConnection()
     
-    if 'current_data' not in st.session_state:
-        st.session_state.current_data = None
-    
-    if 'selected_table' not in st.session_state:
-        st.session_state.selected_table = None
-    
-    if 'table_columns' not in st.session_state:
-        st.session_state.table_columns = None
-    
-    if 'applied_filters' not in st.session_state:
-        st.session_state.applied_filters = {}
-
-def get_api_key(key_name: str = "main") -> str:
-    """Get OpenAI API key from various sources"""
-    # Try to get from secrets first
-    try:
-        secrets_api_key = st.secrets["openai"]["api_key"]
-        if secrets_api_key:
-            return secrets_api_key
-    except:
-        pass
-    
-    # Fallback to environment variable
-    env_api_key = os.getenv('OPENAI_API_KEY')
-    if env_api_key:
-        st.success("✅ Using OpenAI API key from environment variable")
-        return env_api_key
-    
-    # Last resort - manual input
-    st.info("💡 You can set your API key in `.streamlit/secrets.toml` or environment variable for security")
-    return st.text_input("OpenAI API Key", type="password", placeholder="sk-...", key=f"api_key_{key_name}")
-
-def render_database_connection():
-    """Render database connection section"""
-    st.markdown('<div class="section-header">🔗 Koneksi Database</div>', unsafe_allow_html=True)
-    
-    # Get connection parameters from secrets and auto-connect
-    try:
-        db_user = st.secrets["database"]["user"]
-        db_pass = st.secrets["database"]["password"]
-        db_host = st.secrets["database"]["host"]
-        db_port = st.secrets["database"]["port"]
-        db_name = st.secrets["database"]["name"]
-        schema = st.secrets["database"]["schema"]
-        
-        # st.success("✅ Database configuration loaded from secrets")
-        
-        # Auto-connect if not already connected
-        if not st.session_state.db_connection.connection_status:
-            with st.spinner("Connecting to database..."):
-                success, message = st.session_state.db_connection.connect(
-                    db_user, db_pass, db_host, db_port, db_name, schema
-                )
-                
-                if success:
-                    st.markdown(f'<div class="success-box">✅ {message}</div>', unsafe_allow_html=True)
-                else:
-                    st.markdown(f'<div class="error-box">❌ {message}</div>', unsafe_allow_html=True)
-                    
-    except KeyError as e:
-        st.error(f"❌ Missing database configuration in secrets.toml: {e}")
-        st.info("Please ensure your `.streamlit/secrets.toml` file contains the [database] section with all required fields")
-    except Exception as e:
-        st.error(f"❌ Error loading database configuration: {e}")
-    
-    if st.session_state.db_connection.connection_status:
-        st.markdown('<div class="success-box">🟢 Tersambung ke Database</div>', unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="info-box">🔴 Belum Ada Koneksi ke Database</div>', unsafe_allow_html=True)
-
-def build_property_query(lat, lon, luas_tanah_range=None, lebar_jalan_range=None, kondisi_wilayah_opt=None, schema='public', table='engineered_property_data'):
-    """
-    Build SQL query for property search based on coordinates and filters
-    """
-    base_query = f"""
-    SELECT *,
-           ST_Distance(
-               ST_SetSRID(ST_MakePoint({lon}, {lat}), 4326)::geography,
-               geometry::geography
-           ) as distance_meters
-    FROM "{schema}"."{table}"
-    WHERE 1=1
-    """
-    
-    conditions = []
-    
-    # Add luas_tanah filter
-    if luas_tanah_range:
-        min_luas, max_luas = luas_tanah_range
-        conditions.append(f'"luas_tanah" BETWEEN {min_luas} AND {max_luas}')
-    
-    # Add lebar_jalan filter  
-    if lebar_jalan_range:
-        min_lebar, max_lebar = lebar_jalan_range
-        conditions.append(f'"lebar_jalan_di_depan" BETWEEN {min_lebar} AND {max_lebar}')
-    
-    # Add kondisi_wilayah filter
-    if kondisi_wilayah_opt and len(kondisi_wilayah_opt) > 0:
-        kondisi_values = "', '".join(kondisi_wilayah_opt)
-        conditions.append(f'"kondisi_wilayah_sekitar" IN (\'{kondisi_values}\')')
-    
-    # Add conditions to query
-    if conditions:
-        base_query += " AND " + " AND ".join(conditions)
-    
-    # Order by distance and limit to 300
-    base_query += " ORDER BY distance_meters LIMIT 300"
-    
-    return base_query
-
-def render_land_market_filtering():
-    """Enhanced filtering for Land Market with two options"""
-    
-    if st.session_state.selected_table != 'engineered_property_data':
-        return
-    
-    st.markdown("### **Data Selection Method**")
-    
-    # Filter method selection
-    filter_method = st.radio(
-        "Choose your filtering method:",
-        ["📍 Administrative Area Filtering", "🗺️ Point-Based Location Search"],
-        help="Select how you want to filter the land market data"
-    )
-    
-    db = st.session_state.db_connection
-    schema = st.session_state.get('schema', 'public')
-    table = st.session_state.selected_table
-    
-    if filter_method == "📍 Administrative Area Filtering":
-        # Original administrative filtering (wadmkc method)
-        render_administrative_filtering(db, schema, table)
-    
-    else:
-        # New point-based filtering
-        render_point_based_filtering(db, schema, table)
-
-def render_administrative_filtering(db, schema, table):
-    """Original administrative area filtering"""
-    st.markdown("#### 🎯 **Administrative Area Filtering**")
-    
-    # Province (Required)
-    st.markdown("**Required: Select Province/Region**")
-    with st.spinner("Loading province options..."):
-        province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
-
-    if province_values:
-        selected_province = st.selectbox(
-            "Choose a Province/Region:",
-            [""] + province_values,
-            help="You must select a province/region to continue",
-            key="admin_province"
-        )
-        if not selected_province:
-            st.error("❌ Please select a province/region to continue")
-            return
-    else:
-        st.error(f"Could not load provinces: {province_msg}")
-        return
-
-    # Regency/City (Required)
-    st.markdown("**Required: Select Regency/City**")
-    with st.spinner("Loading regency/city options..."):
-        regency_query = f'''
-            SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
-            WHERE wadmpr = '{selected_province}'
-            ORDER BY wadmkk
-        '''
-        regency_df, _ = db.execute_query(regency_query)
-        regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
-
-    if regency_values:
-        selected_regency = st.selectbox(
-            "Choose a Regency/City:",
-            [""] + regency_values,
-            help="You must select a regency/city to continue",
-            key="admin_regency"
-        )
-        if not selected_regency:
-            st.error("❌ Please select a regency/city to continue")
-            return
-    else:
-        st.error("No regency/city found for the selected province.")
-        return
-
-    # District (Required)
-    st.markdown("**Required: Select District**")
-    with st.spinner("Loading district options..."):
-        district_query = f'''
-            SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
-            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
-            ORDER BY wadmkc
-        '''
-        district_df, _ = db.execute_query(district_query)
-        district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
-
-    if district_values:
-        selected_district = st.selectbox(
-            "Choose a District:",
-            [""] + district_values,
-            help="You must select a district to continue",
-            key="admin_district"
-        )
-        if not selected_district:
-            st.error("❌ Please select a district to continue")
-            return
-    else:
-        st.error("No district found for the selected regency/city.")
-        return
-
-    # Subdistrict (Optional)
-    st.markdown("**Optional: Select Subdistrict**")
-    with st.spinner("Loading subdistrict options..."):
-        subdistrict_query = f'''
-            SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
-            WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
-            ORDER BY wadmkd
-        '''
-        subdistrict_df, _ = db.execute_query(subdistrict_query)
-        subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
-
-    selected_subdistrict = st.selectbox(
-        "Choose a Subdistrict (optional):",
-        [""] + subdistrict_values,
-        key="admin_subdistrict"
-    )
-
-    # Build filters
-    filters = {}
-    filters['wadmpr'] = [selected_province]
-    if selected_regency:
-        filters['wadmkk'] = [selected_regency]
-    if selected_district:
-        filters['wadmkc'] = [selected_district]
-    if selected_subdistrict:
-        filters['wadmkd'] = [selected_subdistrict]
-
-    # Additional filters (Year and HPM)
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.markdown("**Filter by Year:**")
-        area_where_parts = []
-        for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
-            if filters.get(key):
-                area_where_parts.append(f'"{key}" = \'{filters[key][0]}\'')
-        area_where_clause = " AND ".join(area_where_parts)
-        
-        years_query = f"""
-            SELECT DISTINCT tahun_pengambilan_data 
-            FROM "{schema}"."{table}"
-            WHERE {area_where_clause}
-            ORDER BY tahun_pengambilan_data
-        """
-        years_df, _ = db.execute_query(years_query)
-        year_values = years_df['tahun_pengambilan_data'].dropna().tolist() if years_df is not None else []
-
-        if year_values:
-            selected_years = st.multiselect(
-                "Select years:",
-                year_values,
-                default=year_values,
-                help="Choose which years to include in analysis",
-                key="admin_years"
-            )
-            if len(selected_years) < len(year_values):
-                filters['tahun_pengambilan_data'] = selected_years
-
-    with col2:
-        st.markdown("**Filter by HPM (Price Range):**")
-        hpm_query = f"""
-            SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
-            FROM "{schema}"."{table}"
-            WHERE {area_where_clause} AND "hpm" IS NOT NULL
-        """
-        hpm_result, _ = db.execute_query(hpm_query)
-        if hpm_result is not None and len(hpm_result) > 0:
-            min_hpm = float(hpm_result['min_hpm'].iloc[0])
-            max_hpm = float(hpm_result['max_hpm'].iloc[0])
-
-            st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
-
-            hpm_range = st.slider(
-                "Select HPM range:",
-                min_value=min_hpm,
-                max_value=max_hpm,
-                value=(min_hpm, max_hpm),
-                step=1000.0,
-                help="Filter properties by price per square meter",
-                key="admin_hpm"
-            )
-            if hpm_range != (min_hpm, max_hpm):
-                filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
-
-    # Load data button for administrative filtering
-    if st.button("🎯 Get Data", type="primary", use_container_width=True, key="admin_get_data"):
-        load_administrative_data(db, schema, table, filters)
-
-def render_point_based_filtering(db, schema, table):
-    """New point-based location filtering"""
-    st.markdown("#### 🗺️ **Point-Based Location Search**")
-    
-    # Map for coordinate selection
-    st.markdown("**Step 1: Input Coordinates**")
-    
-    # Create Indonesia-centered map
-    indonesia_center = [-2.5, 118.0]  # Center of Indonesia
-    m = folium.Map(
-        location=indonesia_center,
-        zoom_start=5,
-        tiles="OpenStreetMap"
-    )
-
-    # Add draggable marker at center
-    marker = folium.Marker(
-        indonesia_center,
-        popup="Dont forget to click me!",
-        tooltip="Drag this marker to select search location",
-        draggable=True,
-        icon=folium.Icon(color='red', icon='map-pin')
-    )
-    marker.add_to(m)
-
-    # Map container - full width responsive
-    # with st.container():
-    with st.expander("Show Map", expanded=False):
-        st.info("""
-                **How to use the map:**
-                - Step 1: Drag the red marker to your location
-                - Step 2: Press the red marker
-                - Step 3: Wait until the 'Current coordinates' change
-                """)
-        map_data = st_folium(m, width=None, height=400, key="location_map")
-        # st.markdown("</div>", unsafe_allow_html=True)
-    st.markdown('<div style="margin-top: -1rem;"></div>', unsafe_allow_html=True)
-
-    # Get coordinates from draggable marker or default
-    map_lat = indonesia_center[0]  # Default
-    map_lon = indonesia_center[1]  # Default
-    map_used = False
-
-    # Check for dragged marker position
-    if map_data and 'last_object_clicked' in map_data and map_data['last_object_clicked']:
-        clicked_data = map_data['last_object_clicked']
-        if 'lat' in clicked_data and 'lng' in clicked_data:
-            map_lat = clicked_data['lat']
-            map_lon = clicked_data['lng']
-            map_used = True
-
-    # Alternative: check all_drawings for marker position
-    elif map_data and 'all_drawings' in map_data and map_data['all_drawings']:
-        for drawing in map_data['all_drawings']:
-            if drawing['geometry']['type'] == 'Point':
-                coords = drawing['geometry']['coordinates']
-                map_lon = coords[0]  # longitude first in GeoJSON
-                map_lat = coords[1]   # latitude second
-                map_used = True
-
-    # Manual coordinate input option
-    st.markdown("**Alternative: Manual Coordinate Input**")
-
-    # Single input for Google Maps style coordinates
-    google_coords = st.text_input(
-        "Enter coordinates (Latitude, Longitude):",
-        value=f"{map_lat:.6f}, {map_lon:.6f}" if not map_used else "",
-        help="Copy-paste from Google Maps (format: -6.2640685548010575, 106.99669724429697)",
-        key="google_coords"
-    )
-
-    # Determine final coordinates based on user input
-    selected_lat = map_lat
-    selected_lon = map_lon
-    coordinate_source = "map (default)" if not map_used else "map (user selected)"
-    manual_used = False
-
-    # Parse Google Maps coordinates if provided
-    if google_coords and ',' in google_coords:
+    if not st.session_state.db_connection.connection_status:
         try:
-            coords_parts = [x.strip() for x in google_coords.split(',')]
-            if len(coords_parts) == 2:
-                manual_lat = float(coords_parts[0])
-                manual_lon = float(coords_parts[1])
-                
-                # Validate coordinate ranges
-                if -90.0 <= manual_lat <= 90.0 and -180.0 <= manual_lon <= 180.0:
-                    selected_lat = manual_lat
-                    selected_lon = manual_lon
-                    coordinate_source = "manual input"
-                    manual_used = True
-                    st.success(f"✅ Using manual coordinates")
-                else:
-                    st.error("❌ Coordinates out of valid range (Lat: -90 to 90, Lon: -180 to 180)")
+            db_user = st.secrets["database"]["user"]
+            db_pass = st.secrets["database"]["password"]
+            db_host = st.secrets["database"]["host"]
+            db_port = st.secrets["database"]["port"]
+            db_name = st.secrets["database"]["name"]
+            schema = st.secrets["database"]["schema"]
+            
+            success, message = st.session_state.db_connection.connect(
+                db_user, db_pass, db_host, db_port, db_name, schema
+            )
+            
+            if success:
+                st.session_state.schema = schema
+                return True
             else:
-                st.error("❌ Please enter coordinates in format: latitude, longitude")
-        except ValueError:
-            st.error("❌ Please enter valid numbers for coordinates")
-        except Exception as e:
-            st.error(f"❌ Error parsing coordinates: {str(e)}")
-
-    # Single coordinate display
-    if manual_used:
-        st.info(f"🎯 **Current coordinates:** {selected_lat:.6f}, {selected_lon:.6f} (from {coordinate_source})")
-    elif map_used:
-        st.info(f"🎯 **Current coordinates:** {selected_lat:.6f}, {selected_lon:.6f} (from {coordinate_source})")
-    else:
-        st.info(f"🎯 **Current coordinates:** {selected_lat:.6f}, {selected_lon:.6f} (from {coordinate_source}) - Click map marker or enter coordinates manually")
-
-    st.info(f"🎯 Search coordinates: **{selected_lat:.6f}, {selected_lon:.6f}**")
+                st.error(f"Database connection failed: {message}")
+                return False
+                
+        except KeyError as e:
+            st.error(f"Missing database configuration: {e}")
+            return False
     
-    # Step 2: Additional filters
-    st.markdown("**Step 2: Additional Filters (Optional)**")
+    return True
+
+def initialize_session_state():
+    """Initialize session state"""
+    if 'chat_manager' not in st.session_state:
+        st.session_state.chat_manager = AgentChatManager()
+    
+    if 'current_agent' not in st.session_state:
+        st.session_state.current_agent = 'condo'
+    
+    if 'geographic_filters' not in st.session_state:
+        st.session_state.geographic_filters = {}
+    
+    if 'agent_manager' not in st.session_state:
+        st.session_state.agent_manager = None
+
+def render_agent_selection():
+    """Render agent selection interface"""
+    st.markdown('<div class="section-header">🤖 Select Property Expert</div>', unsafe_allow_html=True)
+    
+    # Agent selection cards
+    cols = st.columns(3)
+    
+    for i, (agent_type, config) in enumerate(AGENT_CONFIGS.items()):
+        with cols[i % 3]:
+            # Check if this agent is selected
+            is_selected = st.session_state.current_agent == agent_type
+            
+            # Get chat status
+            chat_status = st.session_state.chat_manager.get_chat_status()
+            message_count = chat_status.get(agent_type, 0)
+            status_indicator = "💬" if message_count > 0 else "💤"
+            
+            # Create the card with button
+            if st.button(
+                f"{config['icon']} {config['name']}\n{config['description']}\n{status_indicator} {message_count} messages", 
+                key=f"agent_{agent_type}",
+                use_container_width=True
+            ):
+                st.session_state.current_agent = agent_type
+                st.session_state.chat_manager.switch_agent(agent_type)
+                st.rerun()
+    
+    # Show selected agent
+    if st.session_state.current_agent:
+        current_config = AGENT_CONFIGS[st.session_state.current_agent]
+        st.markdown(
+            f'<div class="success-box">✅ Active Agent: {current_config["icon"]} {current_config["name"]}</div>', 
+            unsafe_allow_html=True
+        )
+        
+        # Show cross-agent syntax help
+        with st.expander("🔗 Cross-Agent Query Syntax", expanded=False):
+            st.markdown("""
+            **Cross-Agent Query Examples:**
+            
+            **Comparison:**
+            - `#condo vs office` - Compare condo and office properties
+            - `#hotel vs retail vs office` - Compare three property types
+            
+            **Consultation:**
+            - `#condo consult hospital` - Condo agent consults hospital data
+            - `#office consult retail hospital` - Office agent consults multiple agents
+            
+            **Market Analysis:**
+            - `#all market analysis Jakarta` - All agents analyze Jakarta market
+            - `#all investment opportunities` - Comprehensive analysis
+            
+            **Impact Analysis:**
+            - `#hospital impact condo` - How hospitals affect condo values
+            - `#retail impact office` - Retail impact on office spaces
+            """)
+
+def render_geographic_filter():
+    """Render geographic filtering interface"""
+    st.markdown('<div class="section-header">🌍 Geographic Filter (Optional)</div>', unsafe_allow_html=True)
+    
+    if not initialize_database():
+        return
+    
+    # Get the current agent's table for geographic filtering
+    current_table = AGENT_CONFIGS[st.session_state.current_agent]['table']
+    
+    st.markdown("Select geographic areas to focus analysis (optional)")
     
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        st.markdown("**Kondisi Wilayah Sekitar:**")
-        # Get unique values for kondisi_wilayah_sekitar
-        with st.spinner("Loading kondisi wilayah options..."):
-            kondisi_values, _ = db.get_column_unique_values(table, 'kondisi_wilayah_sekitar', schema)
+        st.markdown("**Province**")
+        if st.button("Load Provinces", key="load_provinces"):
+            with st.spinner("Loading provinces..."):
+                province_options = st.session_state.db_connection.get_unique_geographic_values(
+                    'wadmpr', table_name=current_table
+                )
+                st.session_state.province_options = province_options
         
-        selected_kondisi = []
-        if kondisi_values:
-            selected_kondisi = st.multiselect(
-                "Select kondisi wilayah:",
-                kondisi_values,
-                help="Filter by surrounding area conditions",
-                key="point_kondisi"
+        if 'province_options' in st.session_state:
+            selected_provinces = st.multiselect(
+                "Select Provinces",
+                st.session_state.province_options,
+                key="selected_provinces"
             )
+        else:
+            selected_provinces = []
+            st.info("Click 'Load Provinces' to see options")
     
     with col2:
-        st.markdown("**Luas Tanah (m²):**")
-        col2a, col2b = st.columns(2)
-        with col2a:
-            min_luas_str = st.text_input(
-                "Min Luas:",
-                value="50",
-                key="point_min_luas"
+        st.markdown("**Regency/City**")
+        if selected_provinces and st.button("Load Regencies", key="load_regencies"):
+            with st.spinner("Loading regencies..."):
+                regency_options = st.session_state.db_connection.get_unique_geographic_values(
+                    'wadmkk',
+                    {'wadmpr': selected_provinces},
+                    table_name=current_table
+                )
+                st.session_state.regency_options = regency_options
+        
+        if 'regency_options' in st.session_state and selected_provinces:
+            selected_regencies = st.multiselect(
+                "Select Regencies",
+                st.session_state.regency_options,
+                key="selected_regencies"
             )
-        with col2b:
-            max_luas_str = st.text_input(
-                "Max Luas:",
-                value="100000",
-                key="point_max_luas"
-            )
-
-        # Validate and convert
-        try:
-            min_luas = float(min_luas_str)
-            max_luas = float(max_luas_str)
-            if min_luas > 50 or max_luas < 100000:
-                luas_range = (min_luas, max_luas)
+        else:
+            selected_regencies = []
+            if not selected_provinces:
+                st.info("Select provinces first")
             else:
-                luas_range = None
-            if min_luas > max_luas:
-                st.error("Min Luas cannot be greater than Max Luas.")
-        except ValueError:
-            luas_range = None
-            st.error("Please enter valid numbers for Luas Tanah.")
-
+                st.info("Click 'Load Regencies' to see options")
+    
     with col3:
-        st.markdown("**Lebar Jalan di Depan (m):**")
-        col3a, col3b = st.columns(2)
-        with col3a:
-            min_lebar_str = st.text_input(
-                "Min Lebar:",
-                value="1",
-                key="point_min_lebar"
+        st.markdown("**District**")
+        if selected_regencies and st.button("Load Districts", key="load_districts"):
+            with st.spinner("Loading districts..."):
+                district_options = st.session_state.db_connection.get_unique_geographic_values(
+                    'wadmkc',
+                    {'wadmkk': selected_regencies},
+                    table_name=current_table
+                )
+                st.session_state.district_options = district_options
+        
+        if 'district_options' in st.session_state and selected_regencies:
+            selected_districts = st.multiselect(
+                "Select Districts",
+                st.session_state.district_options,
+                key="selected_districts"
             )
-        with col3b:
-            max_lebar_str = st.text_input(
-                "Max Lebar:",
-                value="50",
-                key="point_max_lebar"
-            )
-
-        # Validate and convert
-        try:
-            min_lebar = float(min_lebar_str)
-            max_lebar = float(max_lebar_str)
-            if min_lebar > 1 or max_lebar < 50:
-                lebar_range = (min_lebar, max_lebar)
-            else:
-                lebar_range = None
-            if min_lebar > max_lebar:
-                st.error("Min Lebar cannot be greater than Max Lebar.")
-        except ValueError:
-            lebar_range = None
-            st.error("Please enter valid numbers for Lebar Jalan.")
-
-    
-    # Search button
-    st.markdown("**Step 3: Execute Search**")
-    if st.button("🔍 Search Nearest Properties", type="primary", use_container_width=True, key="point_search"):
-        # Prepare filter parameters
-        luas_tanah_range = luas_range
-        lebar_jalan_range = lebar_range if lebar_range and lebar_range != (min_lebar, max_lebar) else None
-        kondisi_wilayah_opt = selected_kondisi if selected_kondisi else None
-        
-        # Build and execute query
-        search_properties_by_location(
-            db, schema, table, 
-            selected_lat, selected_lon,
-            luas_tanah_range, lebar_jalan_range, kondisi_wilayah_opt
-        )
-
-def load_administrative_data(db, schema, table, filters):
-    """Load data using administrative filtering"""
-    try:
-        # Get mandatory columns
-        mandatory_cols = ['luas_tanah', 'kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
-        
-        # Build SELECT clause
-        select_columns = ', '.join([f'"{col}"' for col in mandatory_cols])
-        query = f'SELECT {select_columns} FROM "{schema}"."{table}"'
-        
-        # Build WHERE clause
-        where_conditions = []
-        
-        for col, filter_val in filters.items():
-            if isinstance(filter_val, list):
-                if filter_val:
-                    values_str = "', '".join([str(v) for v in filter_val])
-                    where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-            elif isinstance(filter_val, dict):
-                if filter_val.get('type') == 'range':
-                    where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-        
-        if where_conditions:
-            query += ' WHERE ' + ' AND '.join(where_conditions)
-        
-        query += ' LIMIT 100000'
-        
-        # Execute query
-        with st.spinner("Loading data..."):
-            result_df, message = db.execute_query(query)
-        
-        if result_df is not None:
-            st.session_state.current_data = result_df
-            st.session_state.applied_filters = filters
-            
-            st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows")
-            st.dataframe(result_df.head(10), use_container_width=True)
-            
-            # Show summary
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Total Rows", f"{len(result_df):,}")
-            with col2:
-                st.metric("Avg HPM", f"{result_df['hpm'].mean():,.0f}")
-            with col3:
-                st.metric("Avg Luas", f"{result_df['luas_tanah'].mean():.0f} m²")
-            with col4:
-                st.metric("Data Points", len(result_df))
         else:
-            st.error(f"Failed to load data: {message}")
-            
-    except Exception as e:
-        st.error(f"Error loading data: {str(e)}")
-
-def search_properties_by_location(db, schema, table, lat, lon, luas_tanah_range, lebar_jalan_range, kondisi_wilayah_opt):
-    """Search properties by location using PostGIS"""
-    try:
-        # Build SQL query
-        sql_query = build_property_query(
-            lat, lon,
-            luas_tanah_range=luas_tanah_range,
-            lebar_jalan_range=lebar_jalan_range,
-            kondisi_wilayah_opt=kondisi_wilayah_opt,
-            schema=schema,
-            table=table
-        )
-        
-        # Execute query
-        with st.spinner("Searching nearest properties..."):
-            result_df, message = db.execute_query(sql_query)
-        
-        if result_df is not None and len(result_df) > 0:
-            st.session_state.current_data = result_df
-            
-            st.success(f"✅ Found {len(result_df)} properties near your location!")
-            
-            # Show results summary
-            col1, col2, col3, col4 = st.columns(4)
-            with col1:
-                st.metric("Properties Found", len(result_df))
-            with col2:
-                if 'distance_meters' in result_df.columns:
-                    avg_distance = result_df['distance_meters'].mean()
-                    st.metric("Avg Distance", f"{avg_distance/1000:.1f} km")
-            with col3:
-                if 'hpm' in result_df.columns:
-                    avg_hpm = result_df['hpm'].mean()
-                    st.metric("Avg HPM", f"{avg_hpm:,.0f}")
-            with col4:
-                if 'luas_tanah' in result_df.columns:
-                    avg_luas = result_df['luas_tanah'].mean()
-                    st.metric("Avg Luas", f"{avg_luas:.0f} m²")
-            
-            # Show data preview
-            st.markdown("**Search Results Preview:**")
-            display_columns = ['distance_meters', 'hpm', 'luas_tanah', 'lebar_jalan_di_depan', 'kondisi_wilayah_sekitar']
-            available_columns = [col for col in display_columns if col in result_df.columns]
-            
-            if available_columns:
-                preview_df = result_df[available_columns].head(10).copy()
-                if 'distance_meters' in preview_df.columns:
-                    preview_df['distance_km'] = preview_df['distance_meters'] / 1000
-                    preview_df = preview_df.drop('distance_meters', axis=1)
-                
-                st.dataframe(preview_df, use_container_width=True)
+            selected_districts = []
+            if not selected_regencies:
+                st.info("Select regencies first")
             else:
-                st.dataframe(result_df.head(10), use_container_width=True)
-            
-            # Show applied filters summary
-            st.markdown("**Applied Search Filters:**")
-            st.write(f"📍 **Search Center:** {lat:.6f}, {lon:.6f}")
-            
-            if luas_tanah_range:
-                st.write(f"🏞️ **Luas Tanah:** {luas_tanah_range[0]:.0f} - {luas_tanah_range[1]:.0f} m²")
-            
-            if lebar_jalan_range:
-                st.write(f"🛣️ **Lebar Jalan:** {lebar_jalan_range[0]:.0f} - {lebar_jalan_range[1]:.0f} m")
-            
-            if kondisi_wilayah_opt:
-                st.write(f"🏘️ **Kondisi Wilayah:** {', '.join(kondisi_wilayah_opt)}")
-            
-            st.write(f"📊 **Result Limit:** Nearest 300 properties")
-            
-        else:
-            st.warning("No properties found matching your criteria. Try adjusting your filters or location.")
-            
-    except Exception as e:
-        st.error(f"Error searching properties: {str(e)}")
-        st.code(sql_query)  # Show query for debugging
-
-
-# Integration function to be added to your main render_data_selection() function
-def integrate_land_market_filtering():
-    """
-    Replace the existing Land Market filtering section in render_data_selection() 
-    with this enhanced version that provides two filtering options.
+                st.info("Click 'Load Districts' to see options")
     
-    In your main code, replace the land market filtering section with:
-    
-    if st.session_state.selected_table == 'engineered_property_data':
-        render_land_market_filtering()
-        return  # Exit early for land market data
-    
-    This should be placed right after the table selection and before the 
-    existing column selection logic.
-    """
-    pass
-
-def render_data_selection():
-    """Render data selection and filtering section"""
-    st.markdown('<div class="section-header">🎯 Pilih dan Filter Data</div>', unsafe_allow_html=True)
-    
-    if not st.session_state.db_connection.connection_status:
-        st.warning("⚠️ Please connect to database first")
-        return
-    
-    # Available data tables
-    available_tables = {
-        'condo_converted_2025': {
-            'name': 'Condo Data 2025',
-            'icon': '🏢',
-            'description': 'Condominium properties data for 2025',
-            'color': '#3498db'
-        },
-        'hotel_converted_2025': {
-            'name': 'Hotel Data 2025', 
-            'icon': '🏨',
-            'description': 'Hotel properties data for 2025',
-            'color': '#e74c3c'
-        },
-        'hospital_converted_2025': {
-            'name': 'Hospital Data 2025',
-            'icon': '🏥',
-            'description': 'Hospital properties data for 2025',
-            'color': '#9b59b6'
-        },
-        'office_converted_2025': {
-            'name': 'Office Data 2025',
-            'icon': '🏢',
-            'description': 'Office properties data for 2025', 
-            'color': '#f39c12'
-        },
-        'retail_converted_2025': {
-            'name': 'Retail Data 2025',
-            'icon': '🏬',
-            'description': 'Retail properties data for 2025',
-            'color': '#27ae60'
-        },
-        'engineered_property_data': {
-            'name': 'Land Market',
-            'icon': '🏞️',
-            'description': 'Land market data analysis',
-            'color': '#34495e'
-        }
+    # Store geographic filters
+    st.session_state.geographic_filters = {
+        'wadmpr': selected_provinces,
+        'wadmkk': selected_regencies,
+        'wadmkc': selected_districts
     }
-
-    # Table selection
-    st.markdown("### 📋 **Pilih Data!**")
-    st.markdown("Pilih salah satu data yang tersedia!")
     
-    # Create clickable table cards
-    cols = st.columns(3)
-    
-    for i, (table_key, table_info) in enumerate(available_tables.items()):
-        with cols[i % 3]:
-            # Create a container for the card
-            card_container = st.container()
-            
-            # Check if this table is selected
-            is_selected = st.session_state.selected_table == table_key
-            card_class = "selected-table" if is_selected else "data-table-card"
-            
-            # Create the card with button
-            if st.button(
-                f"{table_info['icon']} {table_info['name']}\n{table_info['description']}", 
-                key=f"table_{table_key}",
-                use_container_width=True
-            ):
-                st.session_state.selected_table = table_key
-                st.session_state.table_columns = None  # Reset columns when table changes
-                st.session_state.applied_filters = {}  # Reset filters
-                st.rerun()
-    
-    # Show selected table
-    if st.session_state.selected_table:
-        selected_info = available_tables[st.session_state.selected_table]
-        st.markdown(f'<div class="success-box">✅ Selected: {selected_info["icon"]} {selected_info["name"]}</div>', unsafe_allow_html=True)
+    # Show current selection
+    if any([selected_provinces, selected_regencies, selected_districts]):
+        st.markdown("**Current Selection:**")
+        if selected_provinces:
+            st.write(f"🌏 Provinces: {', '.join(selected_provinces)}")
+        if selected_regencies:
+            st.write(f"🏙️ Regencies: {', '.join(selected_regencies)}")
+        if selected_districts:
+            st.write(f"📍 Districts: {', '.join(selected_districts)}")
         
-        # Get table columns
-        if st.session_state.table_columns is None:
-            with st.spinner("Loading table structure..."):
-                columns_df, msg = st.session_state.db_connection.get_table_columns(
-                    st.session_state.selected_table, 
-                    st.session_state.get('schema', 'public')
-                )
-                if columns_df is not None:
-                    st.session_state.table_columns = columns_df
-                else:
-                    st.error(f"Failed to load table structure: {msg}")
-                    return
-        
-        # Column selection and filtering
-        if st.session_state.table_columns is not None:
-            st.markdown("### 📊 **Column Selection & Filtering**")
-            
-            # Show available columns
-            with st.expander("📋 **Available Columns**", expanded=False):
-                st.dataframe(st.session_state.table_columns, use_container_width=True)
-            
-            # Add data preview section
-            st.markdown("### 👀 **Data Preview**")
-            with st.spinner("Loading data preview..."):
-                # Get sample data from the table
-                schema = st.session_state.get('schema', 'public')
-                preview_query = f'SELECT * FROM "{schema}"."{st.session_state.selected_table}" LIMIT 5'
-                
-                try:
-                    preview_df, preview_msg = st.session_state.db_connection.execute_query(preview_query)
-                    if preview_df is not None:
-                        st.markdown("**First 5 rows of the selected table:**")
-                        st.dataframe(preview_df, use_container_width=True)
-                        
-                        # Show basic info about the preview
-                        col1, col2, col3 = st.columns(3)
-                        with col1:
-                            st.metric("Preview Rows", len(preview_df))
-                        with col2:
-                            st.metric("Total Columns", len(preview_df.columns))
-                        with col3:
-                            numeric_cols = len(preview_df.select_dtypes(include=[np.number]).columns)
-                            st.metric("Numeric Columns", numeric_cols)
-                    else:
-                        st.error(f"Failed to load preview: {preview_msg}")
-                except Exception as e:
-                    st.error(f"Error loading data preview: {str(e)}")
-            
-            st.markdown("---")
-            
-            # Column selection
-            st.markdown("### 📊 **Column Selection**")
-            
-            available_columns = st.session_state.table_columns['column_name'].tolist()
-
-            if st.session_state.selected_table == 'engineered_property_data':
-                mandatory_cols = ['luas_tanah', 'kondisi_wilayah_sekitar','hpm', 'longitude', 'latitude']
-                user_selectable_cols = [col for col in available_columns if col not in mandatory_cols]
-
-                selected_user_cols = st.multiselect(
-                    "Select up to 6 columns for Land Market analysis:",
-                    user_selectable_cols,
-                    default=[],
-                    help="Mandatory columns luas_tanah, kondisi_wilayah_sekitar, hpm, longitude, latitude are always included."
-                )
-
-                if len(selected_user_cols) > 6:
-                    st.warning("⚠️ You can select a maximum of 6 columns only. Please deselect extra columns.")
-                    
-                selected_columns = mandatory_cols + selected_user_cols
-
-                st.info(
-                    f"📊 {len(selected_columns)} columns selected "
-                    f"(5 mandatory + {len(selected_user_cols)} user-selected)\n\n"
-                    "• **Mandatory columns:** `luas_tanah`, `kondisi_wilayah_sekitar`, `hpm`, `longitude`, `latitude`"
-                )
-
-            else:
-                selected_columns = available_columns
-                # Then continue with the flexible filter UI below as you currently have it
-                st.markdown("Apply filters to focus on specific data subsets (you can apply multiple filters):")
-                
-            
-            if selected_columns:
-                st.markdown('<div class="filter-section">', unsafe_allow_html=True)
-                st.markdown("## 🔍 **Data Selection**")
-
-                db = st.session_state.db_connection
-                schema = st.session_state.get('schema', 'public')
-                table = st.session_state.selected_table
-
-                if st.session_state.selected_table == 'engineered_property_data':
-                    render_land_market_filtering()
-                    return  # Exit early for land market data
-
-                else:
-                    # For other tables: only require province, others are optional
-                    st.markdown("#### 🎯 **Required: Select Province/Region**")
-                    with st.spinner("Loading province options..."):
-                        province_values, province_msg = db.get_column_unique_values(table, 'wadmpr', schema)
-
-                    if province_values:
-                        selected_province = st.selectbox(
-                            "Choose a Province/Region:",
-                            [""] + province_values,
-                            help="You must select a province/region to continue"
-                        )
-                        if not selected_province:
-                            st.error("❌ Please select a province/region to continue")
-                            st.stop()
-                    else:
-                        st.error(f"Could not load provinces: {province_msg}")
-                        st.stop()
-
-                    selected_regency = None
-                    selected_district = None
-                    selected_subdistrict = None
-
-                    # Regency/City (optional)
-                    st.markdown("#### Optional: Select Regency/City")
-                    with st.spinner("Loading regency/city options..."):
-                        regency_query = f'''
-                            SELECT DISTINCT wadmkk FROM "{schema}"."{table}"
-                            WHERE wadmpr = '{selected_province}'
-                            ORDER BY wadmkk
-                        '''
-                        regency_df, _ = db.execute_query(regency_query)
-                        regency_values = regency_df['wadmkk'].dropna().tolist() if regency_df is not None else []
-
-                    selected_regency = st.selectbox(
-                        "Choose a Regency/City (optional):",
-                        [""] + regency_values
-                    )
-                    # if selected_regency:
-                    #     filters['wadmkk'] = [selected_regency]
-
-                    # District (optional, only if regency is selected)
-                    if selected_regency:
-                        st.markdown("#### Optional: Select District")
-                        with st.spinner("Loading district options..."):
-                            district_query = f'''
-                                SELECT DISTINCT wadmkc FROM "{schema}"."{table}"
-                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}'
-                                ORDER BY wadmkc
-                            '''
-                            district_df, _ = db.execute_query(district_query)
-                            district_values = district_df['wadmkc'].dropna().tolist() if district_df is not None else []
-
-                        selected_district = st.selectbox(
-                            "Choose a District (optional):",
-                            [""] + district_values
-                        )
-                        if selected_district:
-                            filters['wadmkc'] = [selected_district]
-                    else:
-                        selected_district = None  # to be used in subdistrict query below
-
-                    # Subdistrict (optional, only if district is selected)
-                    if selected_district:
-                        st.markdown("#### Optional: Select Subdistrict")
-                        with st.spinner("Loading subdistrict options..."):
-                            subdistrict_query = f'''
-                                SELECT DISTINCT wadmkd FROM "{schema}"."{table}"
-                                WHERE wadmpr = '{selected_province}' AND wadmkk = '{selected_regency}' AND wadmkc = '{selected_district}'
-                                ORDER BY wadmkd
-                            '''
-                            subdistrict_df, _ = db.execute_query(subdistrict_query)
-                            subdistrict_values = subdistrict_df['wadmkd'].dropna().tolist() if subdistrict_df is not None else []
-
-                        selected_subdistrict = st.selectbox(
-                            "Choose a Subdistrict (optional):",
-                            [""] + subdistrict_values
-                        )
-                        if selected_subdistrict:
-                            filters['wadmkd'] = [selected_subdistrict]
-
-                # Initialize filters
-                filters = {}
-                filters['wadmpr'] = [selected_province]
-                if selected_regency:  # avoid empty/null/None
-                    filters['wadmkk'] = [selected_regency]
-                if selected_district:
-                    filters['wadmkc'] = [selected_district]
-                if selected_subdistrict:
-                    filters['wadmkd'] = [selected_subdistrict]
-
-
-                # Now, you can safely continue with other steps, as district is guaranteed selected
-                st.success("All required region filters selected! Continue to next steps.")
-
-                # --- END: Region Filters ---
-
-                # --- Block next steps unless District is selected ---
-                if filters.get('wadmkc'):
-                    st.success("✅ District selected")
-
-                    # ---- Optional Filters Example ----
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        st.markdown("**Filter by Year:**")
-
-                        # Build WHERE clause for years (by area)
-                        area_where_parts = []
-                        for key in ['wadmpr', 'wadmkk', 'wadmkc', 'wadmkd']:
-                            if filters.get(key):
-                                area_where_parts.append(f'"{key}" = \'{filters[key][0]}\'')
-                        area_where_clause = " AND ".join(area_where_parts)
-                        years_query = f"""
-                            SELECT DISTINCT tahun_pengambilan_data 
-                            FROM "{schema}"."{table}"
-                            WHERE {area_where_clause}
-                            ORDER BY tahun_pengambilan_data
-                        """
-                        years_df, _ = db.execute_query(years_query)
-                        year_values = years_df['tahun_pengambilan_data'].dropna().tolist() if years_df is not None else []
-
-                        if year_values:
-                            selected_years = st.multiselect(
-                                "Select years:",
-                                year_values,
-                                default=year_values,
-                                help="Choose which years to include in analysis"
-                            )
-                            if len(selected_years) < len(year_values):
-                                filters['tahun_pengambilan_data'] = selected_years
-
-
-                        with col2:
-                            st.markdown("**Filter by HPM (Price Range):**")
-                            hpm_query = f"""
-                                SELECT MIN("hpm") as min_hpm, MAX("hpm") as max_hpm 
-                                FROM "{schema}"."{table}"
-                                WHERE {area_where_clause} AND "hpm" IS NOT NULL
-                            """
-                            hpm_result, _ = db.execute_query(hpm_query)
-                            if hpm_result is not None and len(hpm_result) > 0:
-                                min_hpm = float(hpm_result['min_hpm'].iloc[0])
-                                max_hpm = float(hpm_result['max_hpm'].iloc[0])
-
-                                st.write(f"HPM range: {min_hpm:,.0f} - {max_hpm:,.0f}")
-
-                                hpm_range = st.slider(
-                                    "Select HPM range:",
-                                    min_value=min_hpm,
-                                    max_value=max_hpm,
-                                    value=(min_hpm, max_hpm),
-                                    step=1000.0,
-                                    help="Filter properties by price per square meter"
-                                )
-                                if hpm_range != (min_hpm, max_hpm):
-                                    filters['hpm'] = {'min': hpm_range[0], 'max': hpm_range[1], 'type': 'range'}
-
-                
-                else:
-                    # Flexible filtering for other tables
-                    st.markdown("Apply filters to focus on specific data subsets (you can apply multiple filters):")
-                    
-                    # Initialize session state for multiple filters if not exists
-                    if 'filter_steps' not in st.session_state:
-                        st.session_state.filter_steps = []
-                    
-                    filters = {}
-                    
-                    # Add filter button
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        new_filter_column = st.selectbox(
-                            "Add a new filter for column:",
-                            ["Select a column..."] + selected_columns,
-                            key="new_filter_selector"
-                        )
-                    with col2:
-                        st.write("")
-                        if st.button("➕ Add Filter", use_container_width=True) and new_filter_column != "Select a column...":
-                            if new_filter_column not in [step['column'] for step in st.session_state.filter_steps]:
-                                st.session_state.filter_steps.append({
-                                    'column': new_filter_column,
-                                    'id': len(st.session_state.filter_steps)
-                                })
-                                st.rerun()
-                    
-                    # Display and configure active filters
-                    if st.session_state.filter_steps:
-                        st.markdown("**Active Filters:**")
-                        
-                        for i, filter_step in enumerate(st.session_state.filter_steps):
-                            filter_col = filter_step['column']
-                            
-                            with st.container():
-                                # Filter header with remove button
-                                col1, col2 = st.columns([4, 1])
-                                with col1:
-                                    st.markdown(f"**🔍 Filter {i+1}: `{filter_col}`**")
-                                with col2:
-                                    if st.button("❌", key=f"remove_filter_{i}", help="Remove this filter"):
-                                        st.session_state.filter_steps.pop(i)
-                                        st.rerun()
-                                
-                                # Get unique values for this column
-                                with st.spinner(f"Loading values for {filter_col}..."):
-                                    unique_values, msg = st.session_state.db_connection.get_column_unique_values(
-                                        st.session_state.selected_table, 
-                                        filter_col,
-                                        st.session_state.get('schema', 'public')
-                                    )
-                                
-                                if unique_values:
-                                    # Determine filter type
-                                    col_type = st.session_state.table_columns[
-                                        st.session_state.table_columns['column_name'] == filter_col
-                                    ]['data_type'].iloc[0]
-                                    
-                                    if len(unique_values) <= 50:  # Categorical filter
-                                        selected_values = st.multiselect(
-                                            f"Select values for {filter_col}:",
-                                            unique_values,
-                                            default=unique_values,
-                                            key=f"filter_{filter_col}_{i}"
-                                        )
-                                        if len(selected_values) < len(unique_values):
-                                            filters[filter_col] = selected_values
-                                    
-                                    else:  # Range or text filter
-                                        if 'int' in col_type.lower() or 'float' in col_type.lower() or 'numeric' in col_type.lower():
-                                            # Numeric range filter
-                                            col1, col2 = st.columns(2)
-                                            with col1:
-                                                min_val = st.number_input(
-                                                    f"Min {filter_col}:", 
-                                                    value=float(min(unique_values)), 
-                                                    key=f"min_{filter_col}_{i}"
-                                                )
-                                            with col2:
-                                                max_val = st.number_input(
-                                                    f"Max {filter_col}:", 
-                                                    value=float(max(unique_values)), 
-                                                    key=f"max_{filter_col}_{i}"
-                                                )
-                                            
-                                            if min_val != min(unique_values) or max_val != max(unique_values):
-                                                filters[filter_col] = {'min': min_val, 'max': max_val, 'type': 'range'}
-                                        
-                                        else:
-                                            # Text search filter
-                                            search_term = st.text_input(
-                                                f"Search in {filter_col}:", 
-                                                key=f"search_{filter_col}_{i}",
-                                                help="Use % as wildcard (e.g., 'Jakarta%' for starts with Jakarta)"
-                                            )
-                                            if search_term:
-                                                filters[filter_col] = {'search': search_term, 'type': 'text'}
-                                
-                                else:
-                                    st.warning(f"Could not load values for {filter_col}")
-                                
-                                st.markdown("---")
-                        
-                        # Clear all filters button
-                        if st.button("🗑️ Clear All Filters", use_container_width=True):
-                            st.session_state.filter_steps = []
-                            st.rerun()
-                    
-                    else:
-                        st.info("No filters applied. Use the dropdown above to add filters.")
-                
-                st.markdown('</div>', unsafe_allow_html=True)
-                
-                # Get Data button
-                st.markdown("### 🚀 **Load Data**")
-                
-                # col1, col2, col3 = st.columns([2, 1, 1])
-                
-                # with col1:
-                if st.button("🎯 Get Data", type="primary", use_container_width=True):
-                    # Build the SQL query
-                    schema = st.session_state.get('schema', 'public')
-                    
-                    # Build SELECT clause
-                    select_columns = ', '.join([f'"{col}"' for col in selected_columns])
-                    query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
-                    
-                    # Build WHERE clause
-                    where_conditions = []
-                    
-                    for col, filter_val in filters.items():
-                        if isinstance(filter_val, list):  # Categorical filter
-                            if filter_val:  # Only add condition if values are selected
-                                values_str = "', '".join([str(v) for v in filter_val])
-                                where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                        
-                        elif isinstance(filter_val, dict):
-                            if filter_val.get('type') == 'range':
-                                where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                            elif filter_val.get('type') == 'text':
-                                where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
-                    
-                    if where_conditions:
-                        query += ' WHERE ' + ' AND '.join(where_conditions)
-                    
-                    # Add limit for performance
-                    query += ' LIMIT 100000'
-                    
-                    # Execute query
-                    with st.spinner("Loading data..."):
-                        result_df, message = st.session_state.db_connection.execute_query(query)
-                    
-                    if result_df is not None:
-                        st.session_state.current_data = result_df
-                        st.session_state.applied_filters = filters
-                        
-                        st.success(f"✅ Data loaded successfully! Retrieved {len(result_df):,} rows with {len(selected_columns)} columns.")
-                        
-                        # Show data preview
-                        st.markdown("**Data Preview:**")
-                        st.dataframe(result_df.head(10), use_container_width=True)
-                        
-                        # Show summary statistics
-                        col1, col2, col3, col4 = st.columns(4)
-                        with col1:
-                            st.metric("Total Rows", f"{len(result_df):,}")
-                        with col2:
-                            st.metric("Total Columns", len(result_df.columns))
-                        with col3:
-                            numeric_cols = len(result_df.select_dtypes(include=[np.number]).columns)
-                            st.metric("Numeric Columns", numeric_cols)
-                        with col4:
-                            missing_pct = (result_df.isnull().sum().sum() / (result_df.shape[0] * result_df.shape[1]) * 100)
-                            st.metric("Data Completeness", f"{100-missing_pct:.1f}%")
-                    
-                    else:
-                        st.error(f"Failed to load data: {message}")
-                
-                # with col2:
-                st.write("")
-                if st.button("🔄 Reset Filters", use_container_width=True):
-                    st.session_state.applied_filters = {}
-                    st.rerun()
-                
-                # with col3:
-                st.write("")
-                if st.button("📊 Show Query", use_container_width=True):
-                    # Show the generated query
-                    schema = st.session_state.get('schema', 'public')
-                    select_columns = ', '.join([f'"{col}"' for col in selected_columns])
-                    query = f'SELECT {select_columns} FROM "{schema}"."{st.session_state.selected_table}"'
-                    
-                    where_conditions = []
-                    for col, filter_val in filters.items():
-                        if isinstance(filter_val, list) and filter_val:
-                            values_str = "', '".join([str(v) for v in filter_val])
-                            where_conditions.append(f'"{col}" IN (\'{values_str}\')')
-                        elif isinstance(filter_val, dict):
-                            if filter_val.get('type') == 'range':
-                                where_conditions.append(f'"{col}" BETWEEN {filter_val["min"]} AND {filter_val["max"]}')
-                            elif filter_val.get('type') == 'text':
-                                where_conditions.append(f'"{col}" ILIKE \'%{filter_val["search"]}%\'')
-                    
-                    if where_conditions:
-                        query += ' WHERE ' + ' AND '.join(where_conditions)
-                    
-                    st.code(query, language="sql")
-                
-                # Show applied filters summary
-                if filters:
-                    st.markdown("**Applied Filters:**")
-                    for col, filter_val in filters.items():
-                        if isinstance(filter_val, list):
-                            st.write(f"• `{col}`: {len(filter_val)} selected values")
-                        elif isinstance(filter_val, dict):
-                            if filter_val.get('type') == 'range':
-                                st.write(f"• `{col}`: {filter_val['min']} - {filter_val['max']}")
-                            elif filter_val.get('type') == 'text':
-                                st.write(f"• `{col}`: contains '{filter_val['search']}'")
-
-def render_data_chatbot():
-    """Render Data Chatbot section"""
-    st.markdown('<div class="section-header">💬 RHR AI</div>', unsafe_allow_html=True)
-    
-    # Check prerequisites
-    if st.session_state.current_data is None:
-        st.warning("⚠️ Please load property data first using the Data Selection section")
-        st.info("💡 Go to 'Pilih dan Filter Data' tab and load your dataset")
-        return
-    
-    api_key = get_api_key("chatbot")
-    if not api_key:
-        st.warning("Please provide your OpenAI API key for the chatbot")
-        return
-    
-    # Initialize session state for chatbot
-    if 'chatbot_messages' not in st.session_state:
-        st.session_state.chatbot_messages = []
-    
-    if 'chatbot_system_prompt' not in st.session_state:
-        st.session_state.chatbot_system_prompt = None
-    
-    if 'chatbot_initialized' not in st.session_state:
-        st.session_state.chatbot_initialized = False
-    
-    df = st.session_state.current_data.copy()
-    
-    # Initialize chatbot
-    try:
-        chatbot = DataChatbot(api_key)
-    except Exception as e:
-        st.error(f"Failed to initialize chatbot: {str(e)}")
-        return
-    
-    # Dataset overview
-    st.markdown("### 📊 **Dataset Overview**")
-    col1, col2, col3, col4, col5 = st.columns(5)
-    
-    with col1:
-        st.metric("Total Records", f"{len(df):,}")
-    with col2:
-        st.metric("Columns", len(df.columns))
-    with col3:
-        numeric_cols = len(df.select_dtypes(include=[np.number]).columns)
-        st.metric("Numerical", numeric_cols)
-    with col4:
-        categorical_cols = len(df.select_dtypes(include=['object']).columns)
-        st.metric("Categorical", categorical_cols)
-    with col5:
-        missing_pct = (df.isnull().sum().sum() / (df.shape[0] * df.shape[1]) * 100)
-        st.metric("Data Quality", f"{100-missing_pct:.1f}%")
-    
-    # Data preview
-    with st.expander("📋 **Data Preview**", expanded=False):
-        st.dataframe(df.head(10), use_container_width=True)
-        
-        # Quick stats
-        if len(df.select_dtypes(include=[np.number]).columns) > 0:
-            st.markdown("**Quick Statistics:**")
-            st.dataframe(df.describe(), use_container_width=True)
-    
-    # Initialize system prompt
-    if not st.session_state.chatbot_initialized:
-        with st.spinner("🧠 Initializing AI chatbot with your dataset..."):
-            st.session_state.chatbot_system_prompt = chatbot.create_system_prompt(df)
-            
-            # Generate initial analysis
-            try:
-                initial_message = """
-                Halo! Saya RHR AI. Saya siap membantu Anda memahami data Anda.
-                Silakan tanyakan apa pun tentang data Anda - Saya dapat membantu dengan: 
-                • Analisis dan wawasan statistik 
-                • Pola dan tren data
-                • Analisis pasar properti
-                • Penilaian kualitas data 
-                • Rekomendasi visualisasi 
-                • Pertanyaan khusus tentang properti Anda
-                Apa yang ingin Anda ketahui terlebih dahulu?
-                """
-                
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": initial_message
-                })
-                
-                st.session_state.chatbot_initialized = True
-                
-            except Exception as e:
-                st.error(f"Failed to initialize chatbot analysis: {str(e)}")
-                return
-    
-    # Map visualization
-    if any(col.lower() in ['lat', 'latitude'] for col in df.columns) and any(col.lower() in ['lon', 'lng', 'longitude'] for col in df.columns):
-        st.markdown("### 🗺️ **Property Location Map**")
-        
-        # Find latitude and longitude columns
-        lat_col = None
-        lon_col = None
-        
-        for col in df.columns:
-            if col.lower() in ['lat', 'latitude'] and lat_col is None:
-                lat_col = col
-            elif col.lower() in ['lon', 'lng', 'longitude'] and lon_col is None:
-                lon_col = col
-        
-        if lat_col and lon_col:
-            # Clean and filter valid coordinates - include additional columns
-            additional_cols = []
-            if 'luas_tanah' in df.columns:
-                additional_cols.append('luas_tanah')
-            if 'kondisi_wilayah_sekitar' in df.columns:
-                additional_cols.append('kondisi_wilayah_sekitar')
-
-            map_df = df[[lat_col, lon_col] + additional_cols].copy()
-            map_df = map_df.dropna(subset=[lat_col, lon_col])  # Only drop rows with missing coordinates
-            
-            # Convert to numeric first
-            try:
-                # Convert coordinates to numeric, coerce errors to NaN
-                map_df[lat_col] = pd.to_numeric(map_df[lat_col], errors='coerce')
-                map_df[lon_col] = pd.to_numeric(map_df[lon_col], errors='coerce')
-                
-                # Remove rows with invalid coordinates
-                map_df = map_df.dropna()
-                
-                # Filter valid coordinate ranges
-                map_df = map_df[
-                    (map_df[lat_col] >= -90) & (map_df[lat_col] <= 90) &
-                    (map_df[lon_col] >= -180) & (map_df[lon_col] <= 180)
-                ]
-            except Exception as e:
-                st.error(f"Error processing coordinates: {str(e)}")
-                map_df = pd.DataFrame()  # Empty dataframe if conversion fails
-            
-            if not map_df.empty:
-                # Add price or value column if available for color coding
-                value_col = None
-                if 'hpm' in df.columns:
-                    value_col = 'hpm'
-                elif 'price' in df.columns:
-                    value_col = 'price'
-                elif 'harga' in df.columns:
-                    value_col = 'harga'
-                
-                if value_col:
-                    map_df[value_col] = df[value_col]
-                    map_df = map_df.dropna()
-                
-                # Create the map
-                if len(map_df) > 0:
-                    fig = go.Figure()
-                    
-                    if value_col and value_col in map_df.columns:
-                        # Enhanced hover text for colored markers
-                        enhanced_text = []
-                        for idx, row in map_df.iterrows():
-                            text = f"{value_col}: {row[value_col]:,.0f}"
-                            if 'luas_tanah' in map_df.columns:
-                                text += f"<br>Luas Tanah: {row.get('luas_tanah', 'N/A')} m²"
-                            if 'kondisi_wilayah_sekitar' in map_df.columns:
-                                text += f"<br>Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}"
-                            enhanced_text.append(text)
-                        
-                        # Colored markers based on value
-                        fig.add_trace(go.Scattermapbox(
-                            lat=map_df[lat_col],
-                            lon=map_df[lon_col],
-                            mode='markers',
-                            marker=dict(
-                                size=8,
-                                color=map_df[value_col],
-                                colorscale='Viridis',
-                                showscale=True,
-                                colorbar=dict(title=value_col)
-                            ),
-                            text=enhanced_text,
-                            hovertemplate='<b>%{text}</b><extra></extra>',
-                            name='Properties'
-                        ))
-                    else:
-                        hover_text = []
-                        for idx, row in map_df.iterrows():
-                            text_parts = []
-                            if 'luas_tanah' in map_df.columns:
-                                text_parts.append(f"Luas Tanah: {row.get('luas_tanah', 'N/A')} m²")
-                            if 'kondisi_wilayah_sekitar' in map_df.columns:
-                                text_parts.append(f"Kondisi Wilayah: {row.get('kondisi_wilayah_sekitar', 'N/A')}")
-                            
-                            text = "<br>".join(text_parts) if text_parts else "Property Info"
-                            hover_text.append(text) 
-
-                        fig.add_trace(go.Scattermapbox(
-                            lat=map_df[lat_col],
-                            lon=map_df[lon_col],
-                            mode='markers',
-                            marker=dict(size=8, color='blue'),
-                            text=hover_text,
-                            hovertemplate='%{text}<extra></extra>',
-                            name='Properties'
-                        ))
-                    
-                    # Map layout
-                    center_lat = map_df[lat_col].mean()
-                    center_lon = map_df[lon_col].mean()
-                    
-                    fig.update_layout(
-                        mapbox=dict(
-                            style="open-street-map",
-                            center=dict(lat=center_lat, lon=center_lon),
-                            zoom=10
-                        ),
-                        height=500,
-                        margin=dict(l=0, r=0, t=0, b=0),
-                        title=f"Property Locations ({len(map_df)} properties)"
-                    )
-                    
-                    st.plotly_chart(fig, use_container_width=True)
-                    
-                    # # Map statistics
-                    # col1, col2, col3 = st.columns(3)
-                    # with col1:
-                    #     st.metric("Properties Mapped", len(map_df))
-                    # with col2:
-                    #     st.metric("Center Latitude", f"{center_lat:.4f}")
-                    # with col3:
-                    #     st.metric("Center Longitude", f"{center_lon:.4f}")
-                else:
-                    st.info("No valid coordinates found for mapping")
-            else:
-                st.warning("No valid coordinate data available for mapping")
-        else:
-            st.info("Latitude/Longitude columns not detected in the dataset")
+        if st.button("Clear Filters"):
+            for key in ['province_options', 'regency_options', 'district_options']:
+                if key in st.session_state:
+                    del st.session_state[key]
+            st.session_state.geographic_filters = {}
+            st.rerun()
     else:
-        st.info("Geographic data not available - add latitude/longitude columns to see property locations")
+        st.info("No geographic filters applied")
+
+def render_ai_chat():
+    """Render AI chat interface"""
+    st.markdown('<div class="section-header">💬 AI Chat</div>', unsafe_allow_html=True)
     
-    # Chat interface
-    st.markdown("---")
-    st.markdown("### 💬 **RHR AI**")
+    if not initialize_database():
+        return
+    
+    # Get API key
+    try:
+        api_key = st.secrets["openai"]["api_key"]
+    except KeyError:
+        st.error("OpenAI API key not found in secrets.toml")
+        return
+    
+    # Initialize agent manager
+    if st.session_state.agent_manager is None:
+        st.session_state.agent_manager = MultiAgentManager(api_key, st.session_state.db_connection)
+    
+    # Get current agent's chat history
+    current_history = st.session_state.chat_manager.switch_agent(st.session_state.current_agent)
+    
+    # Display geographic context
+    if any(st.session_state.geographic_filters.values()):
+        st.markdown("**Geographic Context:**")
+        context_parts = []
+        for key, values in st.session_state.geographic_filters.items():
+            if values:
+                context_parts.append(f"{key}: {', '.join(values)}")
+        st.info(" | ".join(context_parts))
     
     # Display chat history
-    chat_container = st.container()
-    with chat_container:
-        for i, message in enumerate(st.session_state.chatbot_messages):
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+    for message in current_history:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
     
     # Chat input
-    if prompt := st.chat_input("Ask me anything about your data..."):
+    if prompt := st.chat_input("Ask me about properties..."):
         # Add user message
-        st.session_state.chatbot_messages.append({"role": "user", "content": prompt})
+        st.session_state.chat_manager.add_message(
+            st.session_state.current_agent, 
+            "user", 
+            prompt
+        )
         
         # Display user message
         with st.chat_message("user"):
             st.markdown(prompt)
         
-        # Generate AI response
+        # Process query
         with st.chat_message("assistant"):
-            try:
-                # Build message history for context
-                messages = [SystemMessage(content=st.session_state.chatbot_system_prompt)]
+            # Build geographic context
+            geo_context = ""
+            if any(st.session_state.geographic_filters.values()):
+                context_parts = []
+                for key, values in st.session_state.geographic_filters.items():
+                    if values:
+                        context_parts.append(f"{key}: {values}")
+                geo_context = "Geographic context: " + " | ".join(context_parts)
+            
+            # Show cross-agent indicator if detected
+            if prompt.startswith('#'):
+                st.markdown('<div class="cross-agent-indicator">🔗 Cross-Agent Query Detected</div>', unsafe_allow_html=True)
+            
+            # Process the query
+            result = st.session_state.agent_manager.process_query(
+                prompt, 
+                st.session_state.current_agent, 
+                geo_context
+            )
+            
+            if result['type'] == 'error':
+                st.error(result['message'])
+                response_message = f"Error: {result['message']}"
+            
+            elif result['type'] == 'query':
+                # Show query results in expandable section
+                with st.expander("📊 Query Details", expanded=False):
+                    st.code(result['sql_query'], language="sql")
+                    if 'data' in result and not result['data'].empty:
+                        st.dataframe(result['data'], use_container_width=True)
                 
-                for msg in st.session_state.chatbot_messages:
-                    if msg["role"] == "user":
-                        messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        messages.append(AIMessage(content=msg["content"]))
+                response_message = result['message']
+            
+            elif result['type'] == 'map':
+                # Map was already displayed by the agent
+                with st.expander("📊 Map Query Details", expanded=False):
+                    st.code(result['sql_query'], language="sql")
+                    if 'data' in result and not result['data'].empty:
+                        st.dataframe(result['data'], use_container_width=True)
                 
-                # Stream response
-                response_container = st.empty()
-                full_response = ""
+                response_message = result['message']
+            
+            elif result['type'] == 'cross_agent':
+                # Show cross-agent results
+                st.markdown(f"**Cross-Agent {result['query_type'].title()} Analysis**")
+                st.markdown(f"Primary Agent: {result['primary_agent'].title()}")
+                st.markdown(f"Participating Agents: {', '.join([a.title() for a in result['agents']])}")
                 
-                try:
-                    for chunk in chatbot.llm.stream(messages):
-                        if hasattr(chunk, 'content'):
-                            full_response += chunk.content
-                            response_container.markdown(full_response + "▌")
-                        
-                    response_container.markdown(full_response)
-                    
-                except Exception as stream_error:
-                    # Fallback to non-streaming
-                    response = chatbot.llm.invoke(messages)
-                    full_response = response.content
-                    response_container.markdown(full_response)
+                # Show individual agent results in expander
+                with st.expander("📊 Individual Agent Results", expanded=False):
+                    for agent_type, summary in result['agent_summaries'].items():
+                        st.markdown(f"**{AGENT_CONFIGS[agent_type]['name']}**")
+                        st.code(summary['sql_query'], language="sql")
+                        st.write(f"Rows: {summary['row_count']}")
+                        st.markdown("---")
                 
-                # Add assistant response to history
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": full_response
-                })
+                # Show warnings if any
+                if result['errors']:
+                    with st.expander("⚠️ Warnings", expanded=False):
+                        for error in result['errors']:
+                            st.warning(error)
                 
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": "I apologize, but I encountered an error. Please try rephrasing your question or ask something else about your data."
-                })
-    
-    # Quick action buttons
-    st.markdown("---")
-    st.markdown("### ⚡ **Quick Analysis Options**")
-    
-    col1, col2, col3, col4 = st.columns(4)
-    
-    with col1:
-        if st.button("📊 Data Summary", use_container_width=True):
-            summary_prompt = "Give me a comprehensive summary of this dataset including key statistics, patterns, and insights."
-            st.session_state.chatbot_messages.append({"role": "user", "content": summary_prompt})
-            try:
-                messages = [SystemMessage(content=st.session_state.chatbot_system_prompt)]
-                for msg in st.session_state.chatbot_messages:
-                    if msg["role"] == "user":
-                        messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        messages.append(AIMessage(content=msg["content"]))
-                
-                response = chatbot.llm.invoke(messages)
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": response.content
-                })
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
-    
-    with col2:
-        if st.button("🏠 Property Insights", use_container_width=True):
-            property_prompt = "Analyze the property data and provide key insights about pricing, locations, and market trends."
-            st.session_state.chatbot_messages.append({"role": "user", "content": property_prompt})
-            try:
-                messages = [SystemMessage(content=st.session_state.chatbot_system_prompt)]
-                for msg in st.session_state.chatbot_messages:
-                    if msg["role"] == "user":
-                        messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        messages.append(AIMessage(content=msg["content"]))
-                
-                response = chatbot.llm.invoke(messages)
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": response.content
-                })
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
-    
-    with col3:
-        if st.button("📈 Price Analysis", use_container_width=True):
-            price_prompt = "Analyze the pricing patterns in this dataset. What are the price ranges, averages, and any notable pricing trends?"
-            st.session_state.chatbot_messages.append({"role": "user", "content": price_prompt})
-            try:
-                messages = [SystemMessage(content=st.session_state.chatbot_system_prompt)]
-                for msg in st.session_state.chatbot_messages:
-                    if msg["role"] == "user":
-                        messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        messages.append(AIMessage(content=msg["content"]))
-                
-                response = chatbot.llm.invoke(messages)
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": response.content
-                })
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
-    
-    with col4:
-        if st.button("🔍 Data Quality", use_container_width=True):
-            quality_prompt = "Assess the data quality of this dataset. What are the missing values, outliers, and data quality issues?"
-            st.session_state.chatbot_messages.append({"role": "user", "content": quality_prompt})
-            try:
-                messages = [SystemMessage(content=st.session_state.chatbot_system_prompt)]
-                for msg in st.session_state.chatbot_messages:
-                    if msg["role"] == "user":
-                        messages.append(HumanMessage(content=msg["content"]))
-                    elif msg["role"] == "assistant":
-                        messages.append(AIMessage(content=msg["content"]))
-                
-                response = chatbot.llm.invoke(messages)
-                st.session_state.chatbot_messages.append({
-                    "role": "assistant", 
-                    "content": response.content
-                })
-                st.rerun()
-                
-            except Exception as e:
-                st.error(f"Error generating response: {str(e)}")
+                response_message = result['message']
+            
+            else:
+                response_message = "Unknown response type"
+            
+            # Add assistant response to history
+            st.session_state.chat_manager.add_message(
+                st.session_state.current_agent, 
+                "assistant", 
+                response_message
+            )
     
     # Chat management
     st.markdown("---")
-    st.markdown("### 🛠️ **Chat Management**")
-    
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🔄 Reset Chat", use_container_width=True):
-            st.session_state.chatbot_messages = []
-            st.session_state.chatbot_initialized = False
+        if st.button("Clear Chat", use_container_width=True):
+            st.session_state.chat_manager.chat_histories[st.session_state.current_agent] = []
             st.rerun()
     
     with col2:
-        if st.button("💾 Export Chat", use_container_width=True):
+        if st.button("Export Chat", use_container_width=True):
             chat_export = {
                 "timestamp": datetime.now().isoformat(),
-                "dataset_shape": df.shape,
-                "selected_table": st.session_state.selected_table,
-                "applied_filters": st.session_state.applied_filters,
-                "chat_messages": st.session_state.chatbot_messages
+                "agent": st.session_state.current_agent,
+                "geographic_filters": st.session_state.geographic_filters,
+                "chat_history": st.session_state.chat_manager.chat_histories[st.session_state.current_agent]
             }
             
             st.download_button(
-                label="📄 Download Chat History",
+                label="Download Chat History",
                 data=json.dumps(chat_export, indent=2),
-                file_name=f"data_chat_export_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
+                file_name=f"chat_{st.session_state.current_agent}_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
                 mime="application/json",
                 use_container_width=True
             )
-    
-    # Sidebar info for chatbot
-    if len(st.session_state.chatbot_messages) > 0:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("**💬 Chat Status**")
-        st.sidebar.success(f"✅ {len(st.session_state.chatbot_messages)} messages")
-        st.sidebar.info(f"🤖 AI Model: gpt-4.1-mini")
-        st.sidebar.info(f"📊 Dataset: {df.shape[0]:,} rows")
-
-@st.cache_resource
-def get_pyg_renderer(df: pd.DataFrame, spec_path: str) -> "StreamlitRenderer":
-    return StreamlitRenderer(df, spec=spec_path, spec_io_mode="rw")
-
-def render_dashboard():
-    st.markdown('<div class="section-header">📊 Dashboard</div>', unsafe_allow_html=True)
-    if st.session_state.current_data is None:
-        st.warning("⚠️ Please load property data first using the Data Selection section")
-        st.info("💡 Go to 'Pilih dan Filter Data' tab and load your dataset")
-        return
-
-    df = st.session_state.current_data.copy()
-    spec_path = f"./pyg_config_{st.session_state.selected_table or 'default'}.json"  # one config file per table
-    pyg_app = get_pyg_renderer(df, spec_path)
-    pyg_app.explorer()
 
 def main():
-    """Main application function"""
+    """Main application"""
+    st.markdown('<h1 class="main-header">🏢 RHR Multi-Agent Property AI</h1>', unsafe_allow_html=True)
+    
     # Initialize session state
     initialize_session_state()
     
-    # App header
-    st.markdown('<h1 class="main-header"> RHR Market Research Agent</h1>', unsafe_allow_html=True)
-    
-    st.sidebar.markdown("""
-        <h1 style="display: flex; align-items: center;">
-            <img src="https://kjpp.rhr.co.id/wp-content/uploads/2020/12/LOGO_KJPP_RHR_1_resize.png" 
-                alt="Logo" style="height:48px; margin-right: 20px;">
-            <span style="font-weight: bold; font-size: 1.5rem;"></span>
-        </h1>
-        """, unsafe_allow_html=True)
-    st.sidebar.markdown("---")
+    # Check authentication
+    if not check_authentication():
+        login()
+        return
     
     # Sidebar navigation
     st.sidebar.title("🧭 Navigation")
-    sections = [
-        "🔗 Koneksi Database",
-        "🎯 Pilih dan Filter Data",
-        "💬 RHR AI",
-        # "📊 Dashboard"
-    ]
+    page = st.sidebar.radio("Go to:", [
+        "🤖 Agent Selection", 
+        "🌍 Geographic Filter", 
+        "💬 AI Chat"
+    ])
     
-    selected_section = st.sidebar.radio("Go to:", sections)
+    # Show current user
+    st.sidebar.markdown("---")
+    st.sidebar.success(f"👤 Logged in as: {st.secrets['auth']['username']}")
     
-    # Render selected section
-    if selected_section == "🔗 Koneksi Database":
-        render_database_connection()
+    if st.sidebar.button("Logout"):
+        st.session_state.authenticated = False
+        st.rerun()
     
-    elif selected_section == "🎯 Pilih dan Filter Data":
-        render_data_selection()
+    # Render selected page
+    if page == "🤖 Agent Selection":
+        render_agent_selection()
+    elif page == "🌍 Geographic Filter":
+        render_geographic_filter()
+    elif page == "💬 AI Chat":
+        render_ai_chat()
     
-    elif selected_section == "💬 RHR AI":
-        render_data_chatbot()
-    
-    # elif selected_section == "📊 Dashboard":
-    #     render_dashboard()
-    
-    # Sidebar info and status
+    # Sidebar status
     st.sidebar.markdown("---")
     st.sidebar.markdown("**📊 System Status**")
     
-    # Connection status
-    if st.session_state.db_connection.connection_status:
+    # Database status
+    if hasattr(st.session_state, 'db_connection') and st.session_state.db_connection.connection_status:
         st.sidebar.success("✅ Database Connected")
     else:
         st.sidebar.error("❌ Database Disconnected")
     
-    # Table selection status
-    if st.session_state.selected_table:
-        st.sidebar.success("Table checked ✅")
-        # st.sidebar.success(f"✅ Table: {st.session_state.selected_table}")
+    # Current agent
+    if st.session_state.current_agent:
+        config = AGENT_CONFIGS[st.session_state.current_agent]
+        st.sidebar.success(f"🤖 Agent: {config['icon']} {config['name']}")
+    
+    # Geographic filters
+    if any(st.session_state.geographic_filters.values()):
+        filter_count = sum(len(v) for v in st.session_state.geographic_filters.values() if v)
+        st.sidebar.success(f"🌍 Filters: {filter_count} applied")
     else:
-        st.sidebar.warning("⚠️ No Table Selected")
+        st.sidebar.info("🌍 No geographic filters")
     
-    # Data status
-    if st.session_state.current_data is not None:
-        st.sidebar.success(f"✅ Data: {st.session_state.current_data.shape[0]:,} rows")
-        st.sidebar.info(f"📊 Columns: {st.session_state.current_data.shape[1]}")
-    else:
-        st.sidebar.warning("⚠️ No Data Loaded")
+    # Chat status
+    chat_status = st.session_state.chat_manager.get_chat_status()
+    active_chats = sum(1 for count in chat_status.values() if count > 0)
+    total_messages = sum(chat_status.values())
+    st.sidebar.info(f"💬 Chats: {active_chats} active, {total_messages} total messages")
     
-    # Filter status
-    if st.session_state.applied_filters:
-        st.sidebar.success(f"🔍 Filters: {len(st.session_state.applied_filters)} applied")
-    
-    # Chatbot status
-    if 'chatbot_messages' in st.session_state and len(st.session_state.chatbot_messages) > 0:
-        st.sidebar.success(f"💬 Chat: {len(st.session_state.chatbot_messages)} messages")
-    
-    # Sidebar info
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**ℹ️ About**")
-    st.sidebar.info(
-        """
-        **RHR Market Research Agent**
-        
-        🏠 Property analysis with RHR market data
-        🤖 AI-powered insights
-        
-        Built with Streamlit, OpenAI
-        """
-    )
-    
-    # Sidebar dataset info
-    if st.session_state.selected_table:
-        st.sidebar.markdown("---")
-        st.sidebar.markdown("**📋 Current Dataset**")
-        
-        table_info = {
-            'condo_converted_2025': {
-                'name': 'Condo 2025',
-                'icon': '🏢'
-            },
-            'hotel_converted_2025': {
-                'name': 'Hotel 2025', 
-                'icon': '🏨'
-            },
-            'office_converted_2025': {
-                'name': 'Office 2025',
-                'icon': '🏢'
-            },
-            'retail_converted_2025': {
-                'name': 'Retail 2025',
-                'icon': '🏬'
-            },
-            'hospital_converted_2025': {
-                'name': 'Hospital 2025',
-                'icon': '🏥'
-            },
-            'engineered_property_data': {
-                'name': 'Land Market',
-                'icon': '🏞️'
-            }
-        }
-        
-        current_table = table_info.get(st.session_state.selected_table, {'name': st.session_state.selected_table, 'icon': '📊'})
-        
-        # Special handling for engineered_property_data display name
-        if st.session_state.selected_table == 'engineered_property_data':
-            display_name = "Land Market"
-        else:
-            display_name = current_table['name']
-        
-        st.sidebar.info(f"{current_table['icon']} {display_name}")
-        
-        if st.session_state.current_data is not None:
-            st.sidebar.metric("Records", f"{len(st.session_state.current_data):,}")
-            st.sidebar.metric("Columns", f"{len(st.session_state.current_data.columns)}")
-            
-            # Memory usage
-            memory_mb = st.session_state.current_data.memory_usage(deep=True).sum() / 1024**2
-            st.sidebar.metric("Memory", f"{memory_mb:.1f} MB")
-    
-    # Quick actions
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("**⚡ Quick Actions**")
-    
-    if st.sidebar.button("🔄 Reset All"):
-        # Reset all session state
-        for key in ['current_data', 'selected_table', 'table_columns', 'applied_filters', 'chatbot_messages', 'chatbot_initialized']:
-            if key in st.session_state:
-                del st.session_state[key]
-        st.sidebar.success("All data reset!")
-        st.rerun()
-    
-    if st.sidebar.button("💾 Export Session"):
-        session_data = {
-            'timestamp': datetime.now().isoformat(),
-            'selected_table': st.session_state.selected_table,
-            'data_shape': st.session_state.current_data.shape if st.session_state.current_data is not None else None,
-            'applied_filters': st.session_state.applied_filters,
-            'has_chat_history': len(st.session_state.get('chatbot_messages', [])) > 0,
-            'total_messages': len(st.session_state.get('chatbot_messages', []))
-        }
-        
-        st.sidebar.download_button(
-            label="📄 Download Session Info",
-            data=json.dumps(session_data, indent=2),
-            file_name=f"session_export_{datetime.now().strftime('%Y%m%d_%H%M')}.json",
-            mime="application/json"
-        )
-    
-    # Footer
-    # st.sidebar.markdown("---")
-    # st.sidebar.markdown("""
-    #     <h1 style="display: flex; align-items: center;">
-    #         <img src="https://kjpp.rhr.co.id/wp-content/uploads/2020/12/LOGO_KJPP_RHR_1_resize.png" 
-    #             alt="Logo" style="height:48px; margin-right: 20px;">
-    #         <span style="font-weight: bold; font-size: 1.5rem;"></span>
-    #     </h1>
-    #     """, unsafe_allow_html=True)
+    # Agent status breakdown
+    st.sidebar.markdown("**🤖 Agent Status**")
+    for agent_type, count in chat_status.items():
+        config = AGENT_CONFIGS[agent_type]
+        status = "💬" if count > 0 else "💤"
+        st.sidebar.text(f"{status} {config['icon']} {config['name']}: {count}")
 
 if __name__ == "__main__":
     main()
