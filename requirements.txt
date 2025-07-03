@@ -1,21 +1,27 @@
-streamlit
-pandas
-geopandas
-numpy
-matplotlib
-seaborn
-plotly
-sqlalchemy
-langchain
-langchain-openai
-openai
-aiohttp
-beautifulsoup4
-langchain
-langchain-community
-langchain-openai
-psycopg2-binary
-plotly
-pygwalker
-folium
-streamlit-folium
+# Streamlit and Web Framework
+streamlit>=1.28.0
+
+# Data Processing
+pandas>=2.0.0
+numpy>=1.24.0
+
+# Database Connectivity
+sqlalchemy>=2.0.0
+# psycopg2-binary>=2.9.0
+
+# AI and OpenAI
+openai>=1.50.0
+
+# Data Visualization
+plotly>=5.15.0
+
+# Utilities
+python-dateutil>=2.8.0
+pytz>=2023.3
+
+# Optional: For better performance
+psycopg2>=2.9.0  # Use this instead of psycopg2-binary for production
+
+# Development/Testing (optional)
+# pytest>=7.0.0
+# pytest-asyncio>=0.21.0
