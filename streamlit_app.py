@@ -544,7 +544,7 @@ Hotel Information:
 - address (TEXT): Property address
 - developer (TEXT): Development company
 - management (TEXT): Hotel management company
-- star (INTEGER): Star rating - TRUE INTEGER (1-5)
+- star (TEXT): Star rating - (1-5)
 - concept (TEXT): Hotel concept/type
 - completionyear (INTEGER): Year completed
 - q (INTEGER): Quarter of completion
