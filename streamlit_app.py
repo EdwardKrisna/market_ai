@@ -296,7 +296,7 @@ class PropertyAIAgent:
         self.system_prompt = self._create_system_prompt()
     
     def _create_system_prompt(self) -> str:
-        """Create agent-specific system prompt"""
+        """Create agent-specific system prompt with accurate data types"""
         
         prompts = {
             'retail': """
@@ -310,41 +310,55 @@ RETAIL EXPERTISE:
 - Developer and project performance
 - Grade classification (A, B, C grade retail spaces)
 
-COLUMN DETAILS:
+ACCURATE COLUMN DETAILS WITH DATA TYPES:
+Basic Information:
+- id (INTEGER): Primary key, unique identifier
+- geometry (TEXT): PostGIS geometry field
+- latitude (DOUBLE PRECISION): Latitude coordinates
+- longitude (DOUBLE PRECISION): Longitude coordinates
+
 Project Information:
-- project_name: Retail development name
-- address: Property address
-- developer: Development company
-- project_status: Development status
-- completionyear: Year completed
-- q: Quarter of completion
+- project_name (TEXT): Retail development name
+- address (TEXT): Property address
+- developer (TEXT): Development company
+- project_status (TEXT): Development status
+- completionyear (INTEGER): Year completed
+- q (INTEGER): Quarter of completion
 
 Property Specifications:
-- grade: Property grade (A, B, C)
-- nla: Net Lettable Area (rentable space)
-- gfa: Gross Floor Area (total floor space)
+- grade (TEXT): Property grade (A, B, C)
+- nla (TEXT): Net Lettable Area (rentable space) - stored as TEXT
+- gfa (TEXT): Gross Floor Area (total floor space) - stored as TEXT
 
-Pricing Data:
-- price_2016 through price_2025: Annual price data
-- price_avg: Average price across years
+Pricing Data (ALL TEXT FORMAT):
+- price_2016 (TEXT): 2016 pricing data
+- price_2017 (TEXT): 2017 pricing data
+- price_2018 (TEXT): 2018 pricing data
+- price_2019 (TEXT): 2019 pricing data
+- price_2020 (TEXT): 2020 pricing data
+- price_2021 (TEXT): 2021 pricing data
+- price_2022 (TEXT): 2022 pricing data
+- price_2023 (TEXT): 2023 pricing data
+- price_2024 (TEXT): 2024 pricing data
+- price_2025 (TEXT): 2025 pricing data
+- price_avg (TEXT): Average price across years
 
 Location Data:
-- area: General area/district
-- precinct: Specific precinct
-- wadmpr: Province
-- wadmkk: Regency/City  
-- wadmkc: District
-- latitude, longitude: Coordinates
+- area (TEXT): General area/district
+- precinct (TEXT): Specific precinct
+- wadmpr (TEXT): Province
+- wadmkk (TEXT): Regency/City  
+- wadmkc (TEXT): District
 
-RULES:
-1. Always include readable column names in SELECT
-2. Use proper JOINs when needed
-3. Handle NULL values appropriately
-4. Add geographic filters when context provided
-5. Include LIMIT for large result sets
-6. For map queries: SELECT id, latitude, longitude, project_name, address, grade, price_avg
-7. Use ILIKE for text searches
-8. Group by relevant columns for aggregations
+CRITICAL SQL RULES:
+1. Price columns are TEXT - use CAST(price_avg AS NUMERIC) for calculations
+2. nla and gfa are TEXT - use CAST(nla AS NUMERIC) if numeric operations needed
+3. completionyear and q are INTEGER - use directly for numeric operations
+4. For price analysis: CAST(price_avg AS NUMERIC) WHERE price_avg IS NOT NULL AND price_avg != ''
+5. For map queries: SELECT id, latitude, longitude, project_name, address, grade, price_avg
+6. Always handle NULL and empty string values in TEXT columns
+7. Use ILIKE for text searches on TEXT columns
+8. Geographic filtering: wadmpr, wadmkk, wadmkc are all TEXT
 """,
             
             'hospital': """
@@ -358,37 +372,42 @@ HOSPITAL EXPERTISE:
 - Healthcare accessibility and coverage
 - BPJS and public health services
 
-COLUMN DETAILS:
+ACCURATE COLUMN DETAILS WITH DATA TYPES:
+Basic Information:
+- id (INTEGER): Primary key, unique identifier
+- geometry (TEXT): PostGIS geometry field
+- latitude (DOUBLE PRECISION): Latitude coordinates
+- longitude (DOUBLE PRECISION): Longitude coordinates
+
 Facility Information:
-- object_name: Hospital/clinic name
-- type: Healthcare facility type
-- grade: Hospital grade/classification
-- ownership: Ownership type (public/private)
+- object_name (TEXT): Hospital/clinic name
+- type (TEXT): Healthcare facility type
+- grade (TEXT): Hospital grade/classification
+- ownership (TEXT): Ownership type (public/private)
 
 Capacity & Infrastructure:
-- beds_capacity: Number of beds (INTEGER)
-- land_area: Land area size
-- building_area: Building area size
+- land_area (TEXT): Land area size - stored as TEXT
+- building_area (TEXT): Building area size - stored as TEXT
+- beds_capacity (INTEGER): Number of beds - TRUE INTEGER
 
 Services:
-- bpjs: BPJS coverage (social health insurance)
-- kb_gratis: Free family planning services
+- bpjs (TEXT): BPJS coverage (social health insurance)
+- kb_gratis (TEXT): Free family planning services
 
 Location Data:
-- wadmpr: Province
-- wadmkk: Regency/City
-- wadmkc: District
-- latitude, longitude: Coordinates
+- wadmpr (TEXT): Province
+- wadmkk (TEXT): Regency/City
+- wadmkc (TEXT): District
 
-RULES:
-1. beds_capacity is INTEGER - use proper numeric operations
-2. Handle NULL values in text fields
-3. Use proper grouping for capacity analysis
-4. Geographic filtering with wadm* columns
-5. For map queries: SELECT id, latitude, longitude, object_name, type, grade, beds_capacity
-6. Use COUNT(*) for facility counts
-7. Use SUM(beds_capacity) for total capacity
-8. ILIKE for text searches
+CRITICAL SQL RULES:
+1. beds_capacity is INTEGER - use directly for SUM(), AVG(), COUNT()
+2. land_area and building_area are TEXT - use CAST(land_area AS NUMERIC) for calculations
+3. All facility info columns are TEXT - use ILIKE for searches
+4. For capacity analysis: SUM(beds_capacity), AVG(beds_capacity) WHERE beds_capacity IS NOT NULL
+5. For area analysis: CAST(land_area AS NUMERIC) WHERE land_area IS NOT NULL AND land_area != ''
+6. For map queries: SELECT id, latitude, longitude, object_name, type, grade, beds_capacity
+7. Use COUNT(*) for facility counts by type, grade, ownership
+8. Handle TEXT columns properly with NULL and empty string checks
 """,
             
             'office': """
@@ -402,41 +421,55 @@ OFFICE EXPERTISE:
 - Corporate real estate and investment analysis
 - Strata Ground Area (SGA) and Gross Floor Area (GFA)
 
-COLUMN DETAILS:
+ACCURATE COLUMN DETAILS WITH DATA TYPES:
+Basic Information:
+- id (INTEGER): Primary key, unique identifier
+- geometry (TEXT): PostGIS geometry field
+- latitude (DOUBLE PRECISION): Latitude coordinates
+- longitude (DOUBLE PRECISION): Longitude coordinates
+
 Building Information:
-- building_name: Office building name
-- grade: Building grade (A, B, C)
-- project_type: Type of office development
-- project_status: Development status
-- completionyear: Year completed
-- q: Quarter of completion
+- building_name (TEXT): Office building name
+- grade (TEXT): Building grade (A, B, C)
+- project_type (TEXT): Type of office development
+- project_status (TEXT): Development status
+- completionyear (INTEGER): Year completed
+- q (INTEGER): Quarter of completion
 
 Property Specifications:
-- sga: Strata Ground Area
-- gfa: Gross Floor Area
-- "owner/developer": Building owner/developer (note: column has slash in name, use quotes)
+- sga (TEXT): Strata Ground Area - stored as TEXT
+- gfa (TEXT): Gross Floor Area - stored as TEXT
+- "owner/developer" (TEXT): Building owner/developer (NOTE: column name has slash)
 
-Pricing Data (NUMERIC):
-- price_2016 through price_2025: Annual pricing (FLOAT)
-- price_avg: Average price (FLOAT)
+Pricing Data (TRUE NUMERIC):
+- price_2016 (DOUBLE PRECISION): 2016 pricing
+- price_2017 (DOUBLE PRECISION): 2017 pricing
+- price_2018 (DOUBLE PRECISION): 2018 pricing
+- price_2019 (DOUBLE PRECISION): 2019 pricing
+- price_2020 (DOUBLE PRECISION): 2020 pricing
+- price_2021 (DOUBLE PRECISION): 2021 pricing
+- price_2022 (DOUBLE PRECISION): 2022 pricing
+- price_2023 (DOUBLE PRECISION): 2023 pricing
+- price_2024 (DOUBLE PRECISION): 2024 pricing
+- price_2025 (DOUBLE PRECISION): 2025 pricing
+- price_avg (DOUBLE PRECISION): Average price
 
 Location Data:
-- area: General area/district
-- precinct: Specific precinct
-- wadmpr: Province
-- wadmkk: Regency/City
-- wadmkc: District
-- latitude, longitude: Coordinates
+- area (TEXT): General area/district
+- precinct (TEXT): Specific precinct
+- wadmpr (TEXT): Province
+- wadmkk (TEXT): Regency/City
+- wadmkc (TEXT): District
 
-RULES:
-1. Price columns are NUMERIC - use proper math operations
-2. Column name "owner/developer" needs quotes: "owner/developer"
-3. Use AVG(), MIN(), MAX() for price analysis
-4. Group by grade for classification analysis
-5. For map queries: SELECT id, latitude, longitude, building_name, grade, price_avg
-6. Geographic filtering with wadm* columns
-7. Handle NULL values in pricing data
-8. Use BETWEEN for price ranges
+CRITICAL SQL RULES:
+1. Price columns are DOUBLE PRECISION - use directly: AVG(price_avg), MIN(price_2024), MAX(price_2025)
+2. completionyear and q are INTEGER - use directly for numeric operations
+3. sga and gfa are TEXT - use CAST(sga AS NUMERIC) for calculations
+4. Column name "owner/developer" needs quotes: "owner/developer"
+5. For price analysis: SELECT AVG(price_avg) WHERE price_avg IS NOT NULL
+6. For map queries: SELECT id, latitude, longitude, building_name, grade, price_avg
+7. For area analysis: CAST(gfa AS NUMERIC) WHERE gfa IS NOT NULL AND gfa != ''
+8. Use BETWEEN for price ranges: price_avg BETWEEN 1000000 AND 5000000
 """,
             
             'condo': """
@@ -450,36 +483,42 @@ CONDO EXPERTISE:
 - Condo grades and market positioning
 - Residential area analysis
 
-COLUMN DETAILS:
+ACCURATE COLUMN DETAILS WITH DATA TYPES:
+Basic Information:
+- id (INTEGER): Primary key, unique identifier
+- geometry (TEXT): PostGIS geometry field
+- latitude (DOUBLE PRECISION): Latitude coordinates
+- longitude (DOUBLE PRECISION): Longitude coordinates
+
 Project Information:
-- project_name: Condominium project name
-- address: Property address
-- developer: Development company
-- project_status: Development status
-- completionyear: Year completed
-- q: Quarter of completion
+- project_name (TEXT): Condominium project name
+- address (TEXT): Property address
+- developer (TEXT): Development company
+- project_status (TEXT): Development status
+- completionyear (INTEGER): Year completed
+- q (INTEGER): Quarter of completion
 
 Property Specifications:
-- grade: Condo grade classification
-- unit: Number of units (INTEGER)
+- grade (TEXT): Condo grade classification
+- unit (INTEGER): Number of units - TRUE INTEGER
 
 Location Data:
-- area: General area/district
-- precinct: Specific precinct
-- wadmpr: Province
-- wadmkk: Regency/City
-- wadmkc: District
-- latitude, longitude: Coordinates
+- area (TEXT): General area/district
+- precinct (TEXT): Specific precinct
+- wadmpr (TEXT): Province
+- wadmkk (TEXT): Regency/City
+- wadmkc (TEXT): District
 
-RULES:
-1. unit is INTEGER - use SUM() for total units
-2. No pricing data available in this table
-3. Use COUNT(*) for project counts
-4. Group by developer for performance analysis
-5. For map queries: SELECT id, latitude, longitude, project_name, address, grade, unit
-6. Geographic filtering with wadm* columns
-7. Use ILIKE for text searches
-8. Handle NULL values appropriately
+CRITICAL SQL RULES:
+1. unit is INTEGER - use directly: SUM(unit), AVG(unit), COUNT(*)
+2. completionyear and q are INTEGER - use directly for numeric operations
+3. All text fields are TEXT - use ILIKE for searches
+4. NO PRICING DATA available in this table
+5. For capacity analysis: SUM(unit) as total_units, AVG(unit) as avg_units_per_project
+6. For map queries: SELECT id, latitude, longitude, project_name, address, grade, unit
+7. For developer analysis: GROUP BY developer, COUNT(*) as project_count, SUM(unit) as total_units
+8. Handle NULL values properly in TEXT columns
+9. Use COUNT(*) for project counts by area, grade, status
 """,
             
             'hotel': """
@@ -493,47 +532,61 @@ HOTEL EXPERTISE:
 - Hospitality pricing and market trends
 - Event facilities and capacity analysis
 
-COLUMN DETAILS:
+ACCURATE COLUMN DETAILS WITH DATA TYPES:
+Basic Information:
+- id (INTEGER): Primary key, unique identifier
+- geometry (TEXT): PostGIS geometry field
+- latitude (DOUBLE PRECISION): Latitude coordinates
+- longitude (DOUBLE PRECISION): Longitude coordinates
+
 Hotel Information:
-- project_name: Hotel name
-- address: Property address
-- developer: Development company
-- management: Hotel management company
-- star: Star rating (INTEGER 1-5)
-- concept: Hotel concept/type
+- project_name (TEXT): Hotel name
+- address (TEXT): Property address
+- developer (TEXT): Development company
+- management (TEXT): Hotel management company
+- star (INTEGER): Star rating - TRUE INTEGER (1-5)
+- concept (TEXT): Hotel concept/type
+- completionyear (INTEGER): Year completed
+- q (INTEGER): Quarter of completion
+- project_status (TEXT): Development status
 
 Capacity & Facilities:
-- unit_planned: Planned units/rooms
-- unit_developed: Developed units/rooms (INTEGER)
-- floors: Number of floors
-- ballroom_capacity: Event space capacity (INTEGER)
+- unit_planned (TEXT): Planned units/rooms - stored as TEXT
+- unit_developed (INTEGER): Developed units/rooms - TRUE INTEGER
+- floors (TEXT): Number of floors - stored as TEXT
+- ballroom_capacity (INTEGER): Event space capacity - TRUE INTEGER
 
-Pricing Data:
-- price_2016 through price_2025: Annual pricing data
-- price_avg: Average price across years
-
-Project Details:
-- project_status: Development status
-- completionyear: Year completed
-- q: Quarter of completion
+Pricing Data (ALL TEXT FORMAT):
+- price_2016 (TEXT): 2016 pricing data
+- price_2017 (TEXT): 2017 pricing data
+- price_2018 (TEXT): 2018 pricing data
+- price_2019 (TEXT): 2019 pricing data
+- price_2020 (TEXT): 2020 pricing data
+- price_2021 (TEXT): 2021 pricing data
+- price_2022 (TEXT): 2022 pricing data
+- price_2023 (TEXT): 2023 pricing data
+- price_2024 (TEXT): 2024 pricing data
+- price_2025 (TEXT): 2025 pricing data
+- price_avg (TEXT): Average price across years
 
 Location Data:
-- area: General area/district
-- precinct: Specific precinct
-- wadmpr: Province
-- wadmkk: Regency/City
-- wadmkc: District
-- latitude, longitude: Coordinates
+- area (TEXT): General area/district
+- precinct (TEXT): Specific precinct
+- wadmpr (TEXT): Province
+- wadmkk (TEXT): Regency/City
+- wadmkc (TEXT): District
 
-RULES:
-1. star is INTEGER - use AVG() for average ratings
-2. unit_developed and ballroom_capacity are INTEGER
-3. Price columns may be text - handle appropriately
-4. Use star rating for quality analysis
-5. For map queries: SELECT id, latitude, longitude, project_name, address, star, concept
-6. Geographic filtering with wadm* columns
-7. Group by star for rating analysis
-8. Handle NULL values in capacity fields
+CRITICAL SQL RULES:
+1. star, unit_developed, ballroom_capacity are INTEGER - use directly for calculations
+2. completionyear and q are INTEGER - use directly
+3. Price columns are TEXT - use CAST(price_avg AS NUMERIC) for calculations
+4. unit_planned and floors are TEXT - use CAST(unit_planned AS NUMERIC) if needed
+5. For star analysis: AVG(star), COUNT(*) GROUP BY star
+6. For capacity analysis: SUM(unit_developed), AVG(ballroom_capacity)
+7. For price analysis: CAST(price_avg AS NUMERIC) WHERE price_avg IS NOT NULL AND price_avg != ''
+8. For map queries: SELECT id, latitude, longitude, project_name, address, star, concept
+9. Handle TEXT columns with NULL and empty string checks
+10. Use star rating for quality segmentation: WHERE star >= 4 for luxury hotels
 """
         }
         
