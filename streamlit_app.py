@@ -646,7 +646,7 @@ Generate ONLY the PostgreSQL query, no explanations.
         try:
             response = self.client.responses.create(
                 model="o4-mini",
-                reasoning={"effort": "medium"},
+                reasoning={"effort": "low"},
                 input=messages,
                 tools=tools,
                 tool_choice=(
