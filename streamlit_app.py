@@ -577,10 +577,10 @@ Location Data:
 - wadmkc (TEXT): District
 
 CRITICAL SQL RULES:
-1. star, unit_developed, ballroom_capacity are INTEGER - use directly for calculations
+1. unit_developed, ballroom_capacity are INTEGER - use directly for calculations
 2. completionyear and q are INTEGER - use directly
 3. Price columns are TEXT - use CAST(price_avg AS NUMERIC) for calculations
-4. unit_planned and floors are TEXT - use CAST(unit_planned AS NUMERIC) if needed
+4. unit_planned, floors, and star are TEXT - use CAST(unit_planned AS NUMERIC) if needed
 5. For star analysis: AVG(star), COUNT(*) GROUP BY star
 6. For capacity analysis: SUM(unit_developed), AVG(ballroom_capacity)
 7. For price analysis: CAST(price_avg AS NUMERIC) WHERE price_avg IS NOT NULL AND price_avg != ''
@@ -646,7 +646,7 @@ Generate ONLY the PostgreSQL query, no explanations.
         try:
             response = self.client.responses.create(
                 model="o4-mini",
-                reasoning={"effort": "low"},
+                reasoning={"effort": "medium"},
                 input=messages,
                 tools=tools,
                 tool_choice=(
