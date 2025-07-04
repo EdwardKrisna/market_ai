@@ -587,6 +587,9 @@ CRITICAL SQL RULES:
 8. For map queries: SELECT id, latitude, longitude, project_name, address, star, concept
 9. Handle TEXT columns with NULL and empty string checks
 10. Use star rating for quality segmentation: WHERE star >= 4 for luxury hotels
+11. For TEXT columns that should be numeric:
+- Use: CAST(CASE WHEN column_name ~ '^[0-9]+\.?[0-9]*$' THEN column_name ELSE NULL END AS NUMERIC)
+- Filter: WHERE column_name IS NOT NULL AND column_name != '' AND column_name NOT ILIKE '%N/A%'
 """
         }
         
