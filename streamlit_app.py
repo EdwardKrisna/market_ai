@@ -10,6 +10,8 @@ import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 import warnings
+import requests
+import math
 
 warnings.filterwarnings('ignore')
 
@@ -125,6 +127,13 @@ AGENT_CONFIGS = {
         'table': 'retail_converted_2025',
         'color': '#27ae60',
         'description': 'Retail property specialist'
+    },
+    'land': {
+        'name': 'Land Market Expert',
+        'icon': '🌍',
+        'table': 'engineered_property_data',
+        'color': '#8b4513',
+        'description': 'Land market and property value specialist'
     }
 }
 
@@ -283,6 +292,47 @@ class CrossAgentQueryParser:
             }
         
         return {'type': 'invalid', 'error': 'Could not parse query'}
+
+# Add GeocodeService class
+class GeocodeService:
+    """Handle geocoding using Google Maps Geocoding API"""
+    
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+        self.base_url = "https://maps.googleapis.com/maps/api/geocode/json"
+    
+    def geocode_address(self, address: str) -> tuple:
+        """
+        Geocode an address to get latitude and longitude
+        Returns: (latitude, longitude, formatted_address) or (None, None, None) if failed
+        """
+        try:
+            params = {
+                'address': address,
+                'key': self.api_key
+            }
+            
+            response = requests.get(self.base_url, params=params)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            if data['status'] == 'OK' and data['results']:
+                result = data['results'][0]
+                location = result['geometry']['location']
+                formatted_address = result['formatted_address']
+                
+                return (
+                    location['lat'],
+                    location['lng'],
+                    formatted_address
+                )
+            else:
+                return None, None, None
+                
+        except Exception as e:
+            st.error(f"Geocoding error: {str(e)}")
+            return None, None, None
 
 class PropertyAIAgent:
     """Individual property AI agent"""
@@ -544,7 +594,7 @@ Hotel Information:
 - address (TEXT): Property address
 - developer (TEXT): Development company
 - management (TEXT): Hotel management company
-- star (TEXT): Star rating - (1-5)
+- star (TEXT): Star rating
 - concept (TEXT): Hotel concept/type
 - completionyear (INTEGER): Year completed
 - q (INTEGER): Quarter of completion
@@ -590,6 +640,59 @@ CRITICAL SQL RULES:
 11. For TEXT columns that should be numeric:
 - Use: CAST(CASE WHEN column_name ~ '^[0-9]+\.?[0-9]*$' THEN column_name ELSE NULL END AS NUMERIC)
 - Filter: WHERE column_name IS NOT NULL AND column_name != '' AND column_name NOT ILIKE '%N/A%'
+""",
+            'land': """
+You are a Land Market Expert AI for RHR specializing in land property analysis and valuation.
+Table: engineered_property_data
+
+LAND MARKET EXPERTISE:
+- Land valuation and price per meter analysis
+- Land characteristics and topographic features
+- Geographic market trends and accessibility
+- Land development potential assessment
+- Area-based pricing comparison
+
+ACCURATE COLUMN DETAILS WITH DATA TYPES:
+Basic Information:
+- id (INTEGER): Primary key, unique identifier
+- alamat (TEXT): Property address
+- latitude (TEXT): Latitude coordinates - stored as TEXT
+- longitude (TEXT): Longitude coordinates - stored as TEXT
+- geometry (GEOMETRY): PostGIS geometry field
+
+Land Specifications:
+- luas_tanah (FLOAT): Land area in square meters - TRUE FLOAT
+- bentuk_tapak (TEXT): Land shape/configuration
+- posisi_tapak (TEXT): Land position/location relative to surroundings
+- orientasi (TEXT): Land orientation (North, South, East, West facing)
+
+Environmental & Infrastructure:
+- kondisi_wilayah_sekitar (TEXT): Surrounding area conditions
+- perkerasan_jalan (TEXT): Road surface condition/type
+- jenis_jalan (TEXT): Road type classification
+
+Pricing Data:
+- hpm (FLOAT): Harga Per Meter (price per square meter) - TRUE FLOAT
+- tahun_pengambilan_data (INTEGER): Data collection year - TRUE INTEGER
+
+Location Data:
+- wadmkd (TEXT): Village/Kelurahan
+- wadmkc (TEXT): District/Kecamatan
+- wadmkk (TEXT): Regency/City
+- wadmpr (TEXT): Province
+
+CRITICAL SQL RULES:
+1. hpm is FLOAT - use directly: AVG(hpm), MIN(hpm), MAX(hpm) WHERE hpm IS NOT NULL AND hpm > 0
+2. luas_tanah is FLOAT - use directly: SUM(luas_tanah), AVG(luas_tanah)
+3. latitude/longitude are TEXT - use CAST(latitude AS NUMERIC), CAST(longitude AS NUMERIC)
+4. tahun_pengambilan_data is INTEGER - use directly for year filtering
+5. For price analysis: AVG(hpm) as avg_price_per_meter, COUNT(*) as sample_count
+6. For area analysis: AVG(luas_tanah) as avg_land_area, SUM(luas_tanah) as total_area
+7. For map queries: SELECT id, CAST(latitude AS NUMERIC) as lat, CAST(longitude AS NUMERIC) as lng, alamat, hpm, luas_tanah
+8. Geographic filtering: wadmpr, wadmkk, wadmkc, wadmkd are all TEXT
+9. Handle TEXT coordinates: WHERE latitude IS NOT NULL AND longitude IS NOT NULL AND latitude != '' AND longitude != ''
+10. Price filtering: WHERE hpm IS NOT NULL AND hpm > 0 for meaningful price analysis
+11. Always include sample counts in aggregations: COUNT(*) as sample_count
 """
         }
         
@@ -597,13 +700,21 @@ CRITICAL SQL RULES:
 You are a {self.agent_type.title()} Property Expert AI for RHR.
 Table: {self.table_name}
 
-You have one helper function:
+You have three helper functions:
   create_map_visualization(sql_query: string, title: string)
     → Returns a map of properties when called.
+    
+  find_nearby_projects(location_name: string, radius_km: float, title: string)
+    → Finds and maps properties near a specific location within given radius.
+    
+  create_chart_visualization(chart_type: string, sql_query: string, title: string, x_column: string, y_column: string, color_column: string)
+    → Creates various charts (bar, pie, line, scatter, histogram) from data.
 
 **RULES**  
-- If the user's question asks for a map, "peta", or "visualisasi lokasi", you **must** respond *only* with a function call to `create_map_visualization` (no SQL text).  
-- Otherwise you **must not** call any function, and instead return *only* a PostgreSQL query (no explanations).
+- If the user asks for charts/graphs ("grafik", "chart", "barchart", "pie", etc.), use `create_chart_visualization` function.
+- If the user asks for properties near a specific location, use `find_nearby_projects` function.
+- If the user asks for a general map, use `create_map_visualization` function.  
+- Otherwise return *only* a PostgreSQL query (no explanations).
 
 {prompts.get(self.agent_type, '')}
 
@@ -612,10 +723,331 @@ Generate ONLY the PostgreSQL query, no explanations.
         
         return base_prompt
     
+    def calculate_distance(self, lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        """Calculate the great circle distance between two points on Earth (in kilometers)"""
+        lat1_rad = math.radians(lat1)
+        lon1_rad = math.radians(lon1)
+        lat2_rad = math.radians(lat2)
+        lon2_rad = math.radians(lon2)
+        
+        dlat = lat2_rad - lat1_rad
+        dlon = lon2_rad - lon1_rad
+        a = math.sin(dlat/2)**2 + math.cos(lat1_rad) * math.cos(lat2_rad) * math.sin(dlon/2)**2
+        c = 2 * math.asin(math.sqrt(a))
+        
+        r = 6371  # Radius of Earth in kilometers
+        return c * r
+
+    def create_chart_visualization(self, data: pd.DataFrame, chart_type: str, title: str, 
+                                x_col: str = None, y_col: str = None, color_col: str = None) -> str:
+        """Create chart visualization using Plotly Express"""
+        try:
+            if data is None or len(data) == 0:
+                return "Error: Tidak ada data untuk membuat grafik."
+            
+            # Auto-detect columns if not provided
+            if x_col is None or y_col is None:
+                chart_type, x_col, y_col, color_col = self._suggest_chart_from_dataframe(data, chart_type)
+            
+            # Ensure columns exist in dataframe
+            available_cols = data.columns.tolist()
+            if x_col and x_col not in available_cols:
+                x_col = available_cols[0] if available_cols else None
+            if y_col and y_col not in available_cols:
+                numeric_cols = data.select_dtypes(include=['number']).columns.tolist()
+                y_col = numeric_cols[0] if numeric_cols else available_cols[1] if len(available_cols) > 1 else None
+            
+            fig = None
+            
+            # Create chart based on type
+            if chart_type == "bar":
+                fig = px.bar(
+                    data, 
+                    x=x_col, 
+                    y=y_col, 
+                    color=color_col,
+                    title=title,
+                    labels={x_col: x_col.replace('_', ' ').title(), 
+                        y_col: y_col.replace('_', ' ').title() if y_col else 'Count'}
+                )
+                fig.update_layout(xaxis_tickangle=-45)
+                
+            elif chart_type == "pie":
+                # For pie charts, use count data or first numeric column
+                if y_col:
+                    fig = px.pie(
+                        data, 
+                        names=x_col, 
+                        values=y_col, 
+                        title=title
+                    )
+                else:
+                    # Count occurrences
+                    pie_data = data[x_col].value_counts().reset_index()
+                    pie_data.columns = [x_col, 'count']
+                    fig = px.pie(
+                        pie_data, 
+                        names=x_col, 
+                        values='count', 
+                        title=title
+                    )
+                    
+            elif chart_type == "line":
+                fig = px.line(
+                    data, 
+                    x=x_col, 
+                    y=y_col, 
+                    color=color_col,
+                    title=title,
+                    markers=True
+                )
+                
+            elif chart_type == "scatter":
+                fig = px.scatter(
+                    data, 
+                    x=x_col, 
+                    y=y_col, 
+                    color=color_col,
+                    title=title,
+                    size_max=60
+                )
+                
+            elif chart_type == "histogram":
+                fig = px.histogram(
+                    data, 
+                    x=x_col if x_col else y_col, 
+                    color=color_col,
+                    title=title,
+                    nbins=20
+                )
+            
+            else:
+                # Default to bar chart
+                fig = px.bar(
+                    data, 
+                    x=x_col, 
+                    y=y_col, 
+                    color=color_col,
+                    title=title
+                )
+                fig.update_layout(xaxis_tickangle=-45)
+            
+            if fig:
+                # Improve chart appearance
+                fig.update_layout(
+                    height=500,
+                    showlegend=True if color_col else False,
+                    template="plotly_white",
+                    title_x=0.5,
+                    margin=dict(l=50, r=50, t=80, b=100)
+                )
+                
+                # Display chart
+                st.plotly_chart(fig, use_container_width=True)
+                
+                return f"✅ Grafik {chart_type} berhasil ditampilkan dengan {len(data)} data points."
+            else:
+                return "Error: Gagal membuat grafik."
+                
+        except Exception as e:
+            return f"Error membuat grafik: {str(e)}"
+
+    def _suggest_chart_from_dataframe(self, df: pd.DataFrame, preferred_chart: str = "auto") -> tuple:
+        """Suggest best chart configuration from existing dataframe"""
+        numeric_cols = df.select_dtypes(include=['number']).columns.tolist()
+        categorical_cols = df.select_dtypes(include=['object', 'category']).columns.tolist()
+        
+        # Remove system columns
+        system_cols = ['id', 'latitude', 'longitude', 'geometry']
+        numeric_cols = [col for col in numeric_cols if col not in system_cols]
+        
+        x_col, y_col, color_col = None, None, None
+        chart_type = preferred_chart
+        
+        if len(categorical_cols) > 0 and len(numeric_cols) > 0:
+            if preferred_chart == "auto":
+                if 'count' in numeric_cols[0].lower() or len(df) < 50:
+                    chart_type = "bar"
+                else:
+                    chart_type = "scatter"
+            
+            x_col = categorical_cols[0]
+            y_col = numeric_cols[0]
+            color_col = categorical_cols[1] if len(categorical_cols) > 1 else None
+            
+        elif len(categorical_cols) > 1:
+            chart_type = "pie" if preferred_chart == "auto" else preferred_chart
+            x_col = categorical_cols[0]
+            
+        elif len(numeric_cols) > 1:
+            chart_type = "scatter" if preferred_chart == "auto" else preferred_chart
+            x_col = numeric_cols[0]
+            y_col = numeric_cols[1]
+        
+        return chart_type, x_col, y_col, color_col
+
+    def find_nearby_properties(self, location_name: str, radius_km: float, title: str, 
+                            geocode_service, db_connection) -> str:
+        """Find properties near a specific location using geocoding"""
+        try:
+            if not geocode_service:
+                return "Error: Layanan geocoding tidak tersedia. Silakan tambahkan Google Maps API key."
+            
+            # Geocode the location
+            with st.spinner(f"Mencari koordinat untuk '{location_name}'..."):
+                lat, lng, formatted_address = geocode_service.geocode_address(location_name)
+            
+            if lat is None or lng is None:
+                return f"Error: Tidak dapat menemukan koordinat untuk lokasi '{location_name}'. Silakan coba dengan nama lokasi yang lebih spesifik."
+            
+            st.success(f"📍 Lokasi ditemukan: {formatted_address}")
+            st.info(f"Koordinat: {lat:.6f}, {lng:.6f}")
+            
+            # Determine coordinate columns based on agent type
+            if self.agent_type == 'land':
+                lat_col = "CAST(latitude AS NUMERIC)"
+                lng_col = "CAST(longitude AS NUMERIC)" 
+                coord_filter = "latitude IS NOT NULL AND longitude IS NOT NULL AND latitude != '' AND longitude != ''"
+            else:
+                lat_col = "latitude"
+                lng_col = "longitude"
+                coord_filter = "latitude IS NOT NULL AND longitude IS NOT NULL AND latitude != 0 AND longitude != 0"
+            
+            # Query nearby properties using Haversine formula
+            sql_query = f"""
+            SELECT 
+                id,
+                {lat_col} as latitude,
+                {lng_col} as longitude,
+                {self._get_display_columns()},
+                (6371 * acos(
+                    cos(radians({lat})) * cos(radians({lat_col})) * 
+                    cos(radians({lng_col}) - radians({lng})) + 
+                    sin(radians({lat})) * sin(radians({lat_col}))
+                )) as distance_km
+            FROM {self.table_name}
+            WHERE 
+                {coord_filter}
+                AND (6371 * acos(
+                    cos(radians({lat})) * cos(radians({lat_col})) * 
+                    cos(radians({lng_col}) - radians({lng})) + 
+                    sin(radians({lat})) * sin(radians({lat_col}))
+                )) <= {radius_km}
+            ORDER BY distance_km ASC
+            LIMIT 50
+            """
+            
+            # Execute query
+            with st.spinner(f"Mencari properti dalam radius {radius_km} km..."):
+                result_df, query_msg = db_connection.execute_query(sql_query)
+            
+            if result_df is not None and len(result_df) > 0:
+                # Create enhanced map with reference point
+                fig = go.Figure()
+                
+                # Add reference point (target location)
+                fig.add_trace(go.Scattermapbox(
+                    lat=[lat],
+                    lon=[lng],
+                    mode='markers',
+                    marker=dict(size=15, color='blue', symbol='star'),
+                    text=[f"📍 {location_name}<br>{formatted_address}"],
+                    hovertemplate='%{text}<extra></extra>',
+                    name='Target Location'
+                ))
+                
+                # Add property markers
+                hover_text = []
+                for idx, row in result_df.iterrows():
+                    text_parts = [f"ID: {row['id']}"]
+                    text_parts.extend(self._create_hover_text(row))
+                    text_parts.append(f"Jarak: {row['distance_km']:.2f} km")
+                    hover_text.append("<br>".join(text_parts))
+                
+                # Use agent-specific color
+                marker_color = AGENT_CONFIGS[self.agent_type]['color']
+                
+                fig.add_trace(go.Scattermapbox(
+                    lat=result_df['latitude'],
+                    lon=result_df['longitude'],
+                    mode='markers',
+                    marker=dict(size=8, color=marker_color),
+                    text=hover_text,
+                    hovertemplate='%{text}<extra></extra>',
+                    name='Properties'
+                ))
+                
+                # Map layout centered on target location
+                fig.update_layout(
+                    mapbox=dict(
+                        style="open-street-map",
+                        center=dict(lat=lat, lon=lng),
+                        zoom=12
+                    ),
+                    height=500,
+                    margin=dict(l=0, r=0, t=30, b=0),
+                    title=f"{title} - {len(result_df)} properti dalam radius {radius_km} km dari {location_name}"
+                )
+                
+                # Display map
+                st.plotly_chart(fig, use_container_width=True)
+
+                # Show results table
+                with st.expander("📊 Detail Properti Terdekat", expanded=False):
+                    display_cols = ['id'] + [col for col in result_df.columns 
+                                        if col not in ['latitude', 'longitude', 'geometry']]
+                    st.dataframe(result_df[display_cols].round(2), use_container_width=True)
+
+                return f"✅ Ditemukan {len(result_df)} properti dalam radius {radius_km} km dari {location_name}. Properti terdekat berjarak {result_df['distance_km'].min():.2f} km."
+            
+            else:
+                return f"❌ Tidak ada properti yang ditemukan dalam radius {radius_km} km dari {location_name}."
+            
+        except Exception as e:
+            return f"Error mencari properti terdekat: {str(e)}"
+
+    def _get_display_columns(self) -> str:
+        """Get display columns based on agent type"""
+        if self.agent_type == 'land':
+            return "alamat, hpm, luas_tanah, wadmpr, wadmkk, wadmkc"
+        elif self.agent_type == 'condo':
+            return "project_name, address, developer, grade, unit, wadmpr, wadmkk"
+        elif self.agent_type == 'hotel':
+            return "project_name, address, star, management, unit_developed, wadmpr, wadmkk"
+        elif self.agent_type == 'office':
+            return "building_name, grade, \"owner/developer\", price_avg, wadmpr, wadmkk"
+        elif self.agent_type == 'hospital':
+            return "object_name, type, grade, beds_capacity, wadmpr, wadmkk"
+        elif self.agent_type == 'retail':
+            return "project_name, address, developer, grade, price_avg, wadmpr, wadmkk"
+        else:
+            return "*"
+
+    def _create_hover_text(self, row) -> list:
+        """Create hover text based on agent type"""
+        if self.agent_type == 'land':
+            text_parts = []
+            if 'alamat' in row and pd.notna(row['alamat']):
+                text_parts.append(f"Alamat: {row['alamat']}")
+            if 'hpm' in row and pd.notna(row['hpm']):
+                text_parts.append(f"HPM: Rp {row['hpm']:,.0f}/m²")
+            if 'luas_tanah' in row and pd.notna(row['luas_tanah']):
+                text_parts.append(f"Luas: {row['luas_tanah']:,.0f} m²")
+            if 'wadmpr' in row and pd.notna(row['wadmpr']):
+                text_parts.append(f"Provinsi: {row['wadmpr']}")
+            return text_parts
+        else:
+            # Default for other agent types
+            return [f"Data: {k}={v}" for k, v in row.items() 
+                    if k not in ['id', 'latitude', 'longitude', 'geometry', 'distance_km'] 
+                    and pd.notna(v)]
+
     def generate_query(self, user_question: str, geographic_context: str = "") -> dict:
-        """Generate SQL query using o4-mini"""
+        """Generate SQL query using o4-mini with enhanced tools"""
         
         is_map_request = bool(re.search(r"\b(map|peta|visualisasi lokasi)\b", user_question, re.I))
+        is_chart_request = bool(re.search(r"\b(grafik|chart|barchart|pie|line|scatter|histogram|graph|visualisasi data)\b", user_question, re.I))
+        is_nearby_request = bool(re.search(r"\b(terdekat|sekitar|dekat|nearby|near)\b", user_question, re.I))
         
         tools = [{
             "type": "function",
@@ -634,6 +1066,61 @@ Generate ONLY the PostgreSQL query, no explanations.
                 "additionalProperties": False
             },
             "strict": True
+        }, {
+            "type": "function",
+            "name": "find_nearby_projects",
+            "description": "Find and map properties near a specific location. Use when user asks for properties near a place.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "location_name": {
+                        "type": "string",
+                        "description": "Name of the location to search near"
+                    },
+                    "radius_km": {
+                        "type": "number",
+                        "description": "Search radius in kilometers (default: 1.0)"
+                    },
+                    "title": { "type": "string" }
+                },
+                "required": ["location_name", "radius_km", "title"],
+                "additionalProperties": False
+            },
+            "strict": True
+        }, {
+            "type": "function",
+            "name": "create_chart_visualization",
+            "description": "Create charts from data. Use when user requests graphs, charts, or data visualization.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "chart_type": {
+                        "type": "string",
+                        "enum": ["bar", "pie", "line", "scatter", "histogram", "auto"],
+                        "description": "Type of chart to create"
+                    },
+                    "sql_query": {
+                        "type": "string",
+                        "description": "SQL query to get data for the chart"
+                    },
+                    "title": { "type": "string" },
+                    "x_column": {
+                        "type": "string",
+                        "description": "Column name for x-axis"
+                    },
+                    "y_column": {
+                        "type": "string", 
+                        "description": "Column name for y-axis"
+                    },
+                    "color_column": {
+                        "type": "string",
+                        "description": "Column name for color grouping"
+                    }
+                },
+                "required": ["chart_type", "sql_query", "title", "x_column", "y_column", "color_column"],
+                "additionalProperties": False
+            },
+            "strict": True
         }]
         
         messages = [
@@ -643,17 +1130,22 @@ Generate ONLY the PostgreSQL query, no explanations.
             messages.append({"role": "user", "content": geographic_context})
         messages.append({"role": "user", "content": user_question})
         
+        # Determine tool choice
+        tool_choice = "auto"
+        if is_chart_request:
+            tool_choice = {"type": "function", "name": "create_chart_visualization"}
+        elif is_nearby_request and is_map_request:
+            tool_choice = {"type": "function", "name": "find_nearby_projects"}
+        elif is_map_request and not is_nearby_request:
+            tool_choice = {"type": "function", "name": "create_map_visualization"}
+        
         try:
             response = self.client.responses.create(
                 model="o4-mini",
                 reasoning={"effort": "low"},
                 input=messages,
                 tools=tools,
-                tool_choice=(
-                    {"type": "function", "name": "create_map_visualization"}
-                    if is_map_request else
-                    "none"
-                ),
+                tool_choice=tool_choice,
                 max_output_tokens=500
             )
             
@@ -782,6 +1274,17 @@ Provide clear answer in Bahasa Indonesia. Focus on business insights, not techni
         except Exception as e:
             return f"Error membuat visualisasi peta: {str(e)}"
 
+def initialize_geocode_service():
+        """Initialize geocoding service"""
+        try:
+            google_api_key = st.secrets["google"]["api_key"]
+            if 'geocode_service' not in st.session_state:
+                st.session_state.geocode_service = GeocodeService(google_api_key)
+            return st.session_state.geocode_service
+        except KeyError:
+            st.warning("Google Maps API key tidak ditemukan. Fitur pencarian lokasi tidak tersedia.")
+            return None
+
 class AgentChatManager:
     """Manage chat histories for all agents"""
     
@@ -850,8 +1353,95 @@ class MultiAgentManager:
             # Cross-agent query
             return self._process_cross_agent_query(parsed, geographic_context)
     
+    def _handle_function_call(self, output_item, agent, question: str) -> dict:
+        """Handle function calls from AI"""
+        try:
+            args = json.loads(output_item.arguments)
+            
+            if output_item.name == "create_map_visualization":
+                sql_query = args.get("sql_query")
+                map_title = args.get("title", "Property Locations")
+                
+                result_df, query_msg = self.db_connection.execute_query(sql_query)
+                
+                if result_df is not None and len(result_df) > 0:
+                    map_result = agent.create_map_visualization(result_df, map_title)
+                    
+                    return {
+                        'type': 'map',
+                        'agent': agent.agent_type,
+                        'sql_query': sql_query,
+                        'data': result_df,
+                        'message': map_result,
+                        'title': map_title
+                    }
+                else:
+                    return {
+                        'type': 'error',
+                        'message': f"Map query failed: {query_msg}"
+                    }
+            
+            elif output_item.name == "find_nearby_projects":
+                location_name = args.get("location_name")
+                radius_km = args.get("radius_km", 1.0)
+                map_title = args.get("title", f"Properties near {location_name}")
+                
+                # Get geocoding service
+                geocode_service = st.session_state.get('geocode_service')
+                
+                nearby_result = agent.find_nearby_properties(
+                    location_name, radius_km, map_title, geocode_service, self.db_connection
+                )
+                
+                return {
+                    'type': 'nearby_map',
+                    'agent': agent.agent_type,
+                    'message': nearby_result,
+                    'title': map_title
+                }
+            
+            elif output_item.name == "create_chart_visualization":
+                chart_type = args.get("chart_type", "auto")
+                sql_query = args.get("sql_query")
+                chart_title = args.get("title", "Data Visualization")
+                x_col = args.get("x_column")
+                y_col = args.get("y_column")
+                color_col = args.get("color_column")
+                
+                result_df, query_msg = self.db_connection.execute_query(sql_query)
+                
+                if result_df is not None and len(result_df) > 0:
+                    chart_result = agent.create_chart_visualization(
+                        result_df, chart_type, chart_title, x_col, y_col, color_col
+                    )
+                    
+                    return {
+                        'type': 'chart',
+                        'agent': agent.agent_type,
+                        'sql_query': sql_query,
+                        'data': result_df,
+                        'message': chart_result,
+                        'title': chart_title
+                    }
+                else:
+                    return {
+                        'type': 'error',
+                        'message': f"Chart query failed: {query_msg}"
+                    }
+            
+            return {
+                'type': 'error',
+                'message': f"Unknown function: {output_item.name}"
+            }
+            
+        except Exception as e:
+            return {
+                'type': 'error',
+                'message': f"Function call error: {str(e)}"
+            }
+
     def _process_single_agent_query(self, question: str, agent_type: str, geographic_context: str) -> dict:
-        """Process single agent query"""
+        """Process single agent query with enhanced tool support"""
         try:
             agent = self.get_agent(agent_type)
             if not agent:
@@ -871,47 +1461,20 @@ class MultiAgentManager:
             
             response = query_result['response']
             
-            # Check if AI called a function (map visualization)
+            # Check if AI called a function
             if response and hasattr(response, 'output') and response.output:
                 for output_item in response.output:
                     if hasattr(output_item, 'type') and output_item.type == "function_call":
-                        if output_item.name == "create_map_visualization":
-                            # Parse function arguments
-                            args = json.loads(output_item.arguments)
-                            sql_query = args.get("sql_query")
-                            map_title = args.get("title", "Property Locations")
-                            
-                            # Execute the SQL query
-                            result_df, query_msg = self.db_connection.execute_query(sql_query)
-                            
-                            if result_df is not None and len(result_df) > 0:
-                                # Create map visualization
-                                map_result = agent.create_map_visualization(result_df, map_title)
-                                
-                                return {
-                                    'type': 'map',
-                                    'agent': agent_type,
-                                    'sql_query': sql_query,
-                                    'data': result_df,
-                                    'message': map_result,
-                                    'title': map_title
-                                }
-                            else:
-                                return {
-                                    'type': 'error',
-                                    'message': f"Map query failed: {query_msg}"
-                                }
+                        return self._handle_function_call(output_item, agent, question)
             
-            # Regular SQL query
+            # Regular SQL query handling
             if hasattr(response, 'output_text'):
                 sql_query = response.output_text.strip()
                 
                 if sql_query and "SELECT" in sql_query.upper():
-                    # Execute the query
                     result_df, query_msg = self.db_connection.execute_query(sql_query)
                     
                     if result_df is not None:
-                        # Format response
                         formatted_response = agent.format_response(question, result_df, sql_query)
                         
                         return {
@@ -926,15 +1489,10 @@ class MultiAgentManager:
                             'type': 'error',
                             'message': f"Query execution failed: {query_msg}"
                         }
-                else:
-                    return {
-                        'type': 'error',
-                        'message': "No valid SQL query generated"
-                    }
             
             return {
                 'type': 'error',
-                'message': "No response from AI"
+                'message': "No valid response generated"
             }
             
         except Exception as e:
@@ -1230,7 +1788,7 @@ def initialize_database():
     return True
 
 def initialize_session_state():
-    """Initialize session state"""
+    """Initialize session state with geocoding service"""
     if 'chat_manager' not in st.session_state:
         st.session_state.chat_manager = AgentChatManager()
     
@@ -1242,6 +1800,10 @@ def initialize_session_state():
     
     if 'agent_manager' not in st.session_state:
         st.session_state.agent_manager = None
+    
+    # Initialize geocoding service
+    if 'geocode_service' not in st.session_state:
+        st.session_state.geocode_service = initialize_geocode_service()
 
 def render_agent_selection():
     """Render agent selection interface"""
@@ -1408,11 +1970,14 @@ def render_geographic_filter():
         st.info("No geographic filters applied")
 
 def render_ai_chat():
-    """Render AI chat interface"""
+    """Render AI chat interface with enhanced tool support"""
     st.markdown('<div class="section-header">💬 AI Chat</div>', unsafe_allow_html=True)
     
     if not initialize_database():
         return
+    
+    # Initialize geocoding service
+    geocode_service = initialize_geocode_service()
     
     # Get API key
     try:
@@ -1421,12 +1986,20 @@ def render_ai_chat():
         st.error("OpenAI API key not found in secrets.toml")
         return
     
-    # Initialize agent manager
+    # Initialize agent manager with geocoding service
     if st.session_state.agent_manager is None:
         st.session_state.agent_manager = MultiAgentManager(api_key, st.session_state.db_connection)
+        # Store geocoding service in session state
+        st.session_state.geocode_service = geocode_service
     
     # Get current agent's chat history
     current_history = st.session_state.chat_manager.switch_agent(st.session_state.current_agent)
+    
+    # Display geocoding service status
+    if geocode_service:
+        st.success("🌍 Layanan pencarian lokasi aktif - dapat mencari properti terdekat")
+    else:
+        st.warning("⚠️ Layanan pencarian lokasi tidak aktif - tambahkan Google Maps API key untuk fitur pencarian terdekat")
     
     # Display geographic context
     if any(st.session_state.geographic_filters.values()):
@@ -1493,6 +2066,19 @@ def render_ai_chat():
             elif result['type'] == 'map':
                 # Map was already displayed by the agent
                 with st.expander("📊 Map Query Details", expanded=False):
+                    st.code(result['sql_query'], language="sql")
+                    if 'data' in result and not result['data'].empty:
+                        st.dataframe(result['data'], use_container_width=True)
+                
+                response_message = result['message']
+            
+            elif result['type'] == 'nearby_map':
+                # Nearby map was already displayed
+                response_message = result['message']
+            
+            elif result['type'] == 'chart':
+                # Chart was already displayed by the agent
+                with st.expander("📊 Chart Query Details", expanded=False):
                     st.code(result['sql_query'], language="sql")
                     if 'data' in result and not result['data'].empty:
                         st.dataframe(result['data'], use_container_width=True)
