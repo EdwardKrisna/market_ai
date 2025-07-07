@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
+import plotly.express as px
 from sqlalchemy import create_engine, text
 from openai import OpenAI
 import json
@@ -739,7 +740,7 @@ Generate ONLY the PostgreSQL query, no explanations.
         return c * r
 
     def create_chart_visualization(self, data: pd.DataFrame, chart_type: str, title: str, 
-                                x_col: str = None, y_col: str = None, color_col: str = None) -> str:
+                             x_col: str = None, y_col: str = None, color_col: str = None) -> str:
         """Create chart visualization using Plotly Express"""
         try:
             if data is None or len(data) == 0:
