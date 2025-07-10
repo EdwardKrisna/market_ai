@@ -785,8 +785,27 @@ def initialize_agents():
     for agent_type, config in AGENT_CONFIGS.items():
         table_name = config['table']
         
-        # Get agent-specific instructions with table name formatting
-        agent_instructions = AGENT_INSTRUCTIONS[agent_type].format(table_name=table_name)
+        # Get agent-specific instructions and format with table name
+        try:
+            agent_instructions = AGENT_INSTRUCTIONS[agent_type].format(table_name=table_name)
+        except KeyError:
+            # Fallback if agent type not found
+            agent_instructions = f"""You are a {config['name']} AI for RHR specializing in {config['description']} using o4-mini.
+    Table: {table_name}
+
+    AVAILABLE TOOLS:
+    1. execute_sql_query(sql_query) - Run SQL queries and display results
+    2. create_map_visualization(sql_query, title) - Create location maps
+    3. create_chart_visualization(chart_type, sql_query, title, x_column, y_column, color_column) - Create charts
+    4. find_nearby_projects(location_name, radius_km, title) - Find projects near locations
+
+    RESPONSE STYLE:
+    - Always respond in user's language (auto-detect)
+    - Provide business insights with data
+    - Use tools appropriately based on request type
+    - Handle follow-up questions using context
+
+    CRITICAL: You can ONLY answer questions in this {agent_type} property domain scope!"""
         
         # Add common tool instructions
         full_instructions = f"""{agent_instructions}
@@ -819,8 +838,6 @@ def initialize_agents():
         )
         
         agents[agent_type] = agent
-    
-    return agents
 
 # Cross-agent query parser
 class CrossAgentQueryParser:
