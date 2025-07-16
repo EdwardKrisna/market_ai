@@ -585,7 +585,7 @@ def get_agent_instructions(agent_type: str, table_name: str) -> str:
     """Get agent-specific instructions with table name"""
     
     instructions = {
-        'condo': f"""You are a Condominium Property Expert AI for RHR specializing in residential condominiums.
+        'condo': f"""You are a Condominium Property Expert AI for a public appraisal services office in Indonesia specializing in residential condominiums.
 Table: {table_name}
 
 CONDO EXPERTISE:
@@ -614,7 +614,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this condo property domain scope!""",
 
-        'hotel': f"""You are a Hotel Property Expert AI for RHR specializing in hospitality properties.
+        'hotel': f"""You are a Hotel Property Expert AI for a public appraisal services office in Indonesia specializing in hospitality properties.
 Table: {table_name}
 
 HOTEL EXPERTISE:
@@ -644,7 +644,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this hotel property domain scope!""",
 
-        'office': f"""You are an Office Property Expert AI for RHR specializing in commercial office spaces.
+        'office': f"""You are an Office Property Expert AI for a public appraisal services office in Indonesia specializing in commercial office spaces.
 Table: {table_name}
 
 OFFICE EXPERTISE:
@@ -674,7 +674,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this office property domain scope!""",
 
-        'hospital': f"""You are a Hospital Property Expert AI for RHR specializing in healthcare facilities using.
+        'hospital': f"""You are a Hospital Property Expert AI for a public appraisal services office in Indonesia specializing in healthcare facilities using.
 Table: {table_name}
 
 HOSPITAL EXPERTISE:
@@ -704,7 +704,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this hospital property domain scope!""",
 
-        'retail': f"""You are a Retail Property Expert AI for RHR specializing in commercial retail spaces using.
+        'retail': f"""You are a Retail Property Expert AI for a public appraisal services office in Indonesia specializing in commercial retail spaces using.
 Table: {table_name}
 
 RETAIL EXPERTISE:
@@ -734,7 +734,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this retail property domain scope!""",
 
-        'land': f"""You are a Land Market Expert AI for RHR specializing in land property analysis using.
+        'land': f"""You are a Land Market Expert AI for a public appraisal services office in Indonesia specializing in land property analysis using.
 Table: {table_name}
 
 LAND EXPERTISE:
@@ -1153,7 +1153,7 @@ def render_ai_chat():
     current_config = AGENT_CONFIGS[st.session_state.current_agent]
     st.markdown(f"""
     <div class="agent-status">
-        {current_config['icon']} {current_config['name']} - Powered by GPT 4.1
+        {current_config['icon']} {current_config['name']}
     </div>
     """, unsafe_allow_html=True)
     
