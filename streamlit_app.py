@@ -1273,90 +1273,90 @@ def render_ai_chat():
                 use_container_width=True
             )
 
-def render_examples():
-    """Render example queries to help users"""
-    st.markdown('<div class="section-header">📝 Example Queries</div>', unsafe_allow_html=True)
+# def render_examples():
+#     """Render example queries to help users"""
+#     st.markdown('<div class="section-header">📝 Example Queries</div>', unsafe_allow_html=True)
     
-    # Current agent examples
-    current_agent = st.session_state.current_agent
-    current_config = AGENT_CONFIGS[current_agent]
+#     # Current agent examples
+#     current_agent = st.session_state.current_agent
+#     current_config = AGENT_CONFIGS[current_agent]
     
-    st.markdown(f"### {current_config['icon']} {current_config['name']} Examples")
+#     st.markdown(f"### {current_config['icon']} {current_config['name']} Examples")
     
-    agent_examples = {
-        'condo': [
-            "Berapa total unit condo di Jakarta?",
-            "Siapa developer terbesar untuk proyek condo?",
-            "Buatkan peta semua proyek condo di Bali",
-            "Grafik bar developer vs jumlah unit",
-            "Proyek condo terdekat dari Mall Taman Anggrek"
-        ],
-        'hotel': [
-            "Berapa hotel bintang 5 di Indonesia?",
-            "Buatkan peta hotel di Yogyakarta",
-            "Grafik pie distribusi hotel per bintang",
-            "Hotel terdekat dari Monas radius 2km",
-            "Siapa management hotel terbesar?"
-        ],
-        'office': [
-            "Berapa rata-rata harga office Grade A?",
-            "Buatkan peta office building di Jakarta",
-            "Grafik harga office per tahun",
-            "Office terdekat dari Sudirman radius 1km",
-            "Perbandingan harga office Grade A vs B"
-        ],
-        'hospital': [
-            "Berapa total kapasitas tempat tidur rumah sakit?",
-            "Buatkan peta rumah sakit di Surabaya",
-            "Grafik distribusi rumah sakit per grade",
-            "Rumah sakit terdekat dari Senayan",
-            "Rumah sakit yang menerima BPJS"
-        ],
-        'retail': [
-            "Berapa rata-rata harga retail per meter?",
-            "Buatkan peta retail space di Bandung",
-            "Grafik harga retail per tahun",
-            "Retail terdekat dari Plaza Indonesia",
-            "Developer retail terbesar di Indonesia"
-        ],
-        'land': [
-            "Berapa harga tanah rata-rata per meter di Jakarta?",
-            "Buatkan peta tanah di Bekasi",
-            "Grafik harga tanah per provinsi",
-            "Tanah terdekat dari Bogor radius 5km",
-            "Perbandingan harga tanah per orientasi"
-        ]
-    }
+#     agent_examples = {
+#         'condo': [
+#             "Berapa total unit condo di Jakarta?",
+#             "Siapa developer terbesar untuk proyek condo?",
+#             "Buatkan peta semua proyek condo di Bali",
+#             "Grafik bar developer vs jumlah unit",
+#             "Proyek condo terdekat dari Mall Taman Anggrek"
+#         ],
+#         'hotel': [
+#             "Berapa hotel bintang 5 di Indonesia?",
+#             "Buatkan peta hotel di Yogyakarta",
+#             "Grafik pie distribusi hotel per bintang",
+#             "Hotel terdekat dari Monas radius 2km",
+#             "Siapa management hotel terbesar?"
+#         ],
+#         'office': [
+#             "Berapa rata-rata harga office Grade A?",
+#             "Buatkan peta office building di Jakarta",
+#             "Grafik harga office per tahun",
+#             "Office terdekat dari Sudirman radius 1km",
+#             "Perbandingan harga office Grade A vs B"
+#         ],
+#         'hospital': [
+#             "Berapa total kapasitas tempat tidur rumah sakit?",
+#             "Buatkan peta rumah sakit di Surabaya",
+#             "Grafik distribusi rumah sakit per grade",
+#             "Rumah sakit terdekat dari Senayan",
+#             "Rumah sakit yang menerima BPJS"
+#         ],
+#         'retail': [
+#             "Berapa rata-rata harga retail per meter?",
+#             "Buatkan peta retail space di Bandung",
+#             "Grafik harga retail per tahun",
+#             "Retail terdekat dari Plaza Indonesia",
+#             "Developer retail terbesar di Indonesia"
+#         ],
+#         'land': [
+#             "Berapa harga tanah rata-rata per meter di Jakarta?",
+#             "Buatkan peta tanah di Bekasi",
+#             "Grafik harga tanah per provinsi",
+#             "Tanah terdekat dari Bogor radius 5km",
+#             "Perbandingan harga tanah per orientasi"
+#         ]
+#     }
     
-    examples = agent_examples.get(current_agent, [])
+#     examples = agent_examples.get(current_agent, [])
     
-    for i, example in enumerate(examples):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.write(f"• {example}")
-        with col2:
-            if st.button("Try", key=f"try_{current_agent}_{i}", use_container_width=True):
-                st.session_state.example_query = example
-                st.rerun()
+#     for i, example in enumerate(examples):
+#         col1, col2 = st.columns([4, 1])
+#         with col1:
+#             st.write(f"• {example}")
+#         with col2:
+#             if st.button("Try", key=f"try_{current_agent}_{i}", use_container_width=True):
+#                 st.session_state.example_query = example
+#                 st.rerun()
     
-    # Cross-agent examples
-    st.markdown("### 🔗 Cross-Agent Examples")
+#     # Cross-agent examples
+#     st.markdown("### 🔗 Cross-Agent Examples")
     
-    cross_agent_examples = [
-        "#condo vs hotel - Compare condo and hotel properties",
-        "#office vs retail - Compare office and retail spaces",
-        "#hospital vs condo - Compare hospital and condo locations",
-        "#land vs office - Compare land prices and office locations"
-    ]
+#     cross_agent_examples = [
+#         "#condo vs hotel - Compare condo and hotel properties",
+#         "#office vs retail - Compare office and retail spaces",
+#         "#hospital vs condo - Compare hospital and condo locations",
+#         "#land vs office - Compare land prices and office locations"
+#     ]
     
-    for i, example in enumerate(cross_agent_examples):
-        col1, col2 = st.columns([4, 1])
-        with col1:
-            st.write(f"• {example}")
-        with col2:
-            if st.button("Try", key=f"try_cross_{i}", use_container_width=True):
-                st.session_state.example_query = example
-                st.rerun()
+#     for i, example in enumerate(cross_agent_examples):
+#         col1, col2 = st.columns([4, 1])
+#         with col1:
+#             st.write(f"• {example}")
+#         with col2:
+#             if st.button("Try", key=f"try_cross_{i}", use_container_width=True):
+#                 st.session_state.example_query = example
+#                 st.rerun()
 
 def main():
     """Main application"""
@@ -1408,8 +1408,8 @@ def main():
         render_agent_selection()
     elif page == "💬 AI Chat":
         render_ai_chat()
-    elif page == "📝 Examples":
-        render_examples()
+    # elif page == "📝 Examples":
+    #     render_examples()
     
     # Sidebar status
     st.sidebar.markdown("---")
