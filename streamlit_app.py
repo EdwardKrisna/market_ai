@@ -1160,27 +1160,6 @@ def render_ai_chat():
     # Get current agent's chat history
     current_history = st.session_state.chat_messages.get(st.session_state.current_agent, [])
     
-    # Display service status
-    col1, col2, col3 = st.columns(3)
-    
-    with col1:
-        if st.session_state.db_connection.connection_status:
-            st.success("✅ Database Connected")
-        else:
-            st.error("❌ Database Disconnected")
-    
-    with col2:
-        if geocode_service:
-            st.success("✅ Location Service Active")
-        else:
-            st.warning("⚠️ Location Service Inactive")
-    
-    with col3:
-        if st.session_state.agents:
-            st.success("✅ Agents Ready")
-        else:
-            st.error("❌ Agents Not Ready")
-    
     # Display chat history with visualizations
     for i, message in enumerate(current_history):
         with st.chat_message(message["role"]):
