@@ -1375,7 +1375,7 @@ def main():
     page = st.sidebar.radio("Go to:", [
         "🤖 Agent Selection", 
         "💬 AI Chat",
-        "📝 Examples"
+        # "📝 Examples"
     ])
     
     # Show current user
@@ -1386,22 +1386,22 @@ def main():
         st.session_state.authenticated = False
         st.rerun()
     
-    # Handle example query injection
-    if hasattr(st.session_state, 'example_query'):
-        # Switch to chat tab and inject query
-        page = "💬 AI Chat"
+    # # Handle example query injection
+    # if hasattr(st.session_state, 'example_query'):
+    #     # Switch to chat tab and inject query
+    #     page = "💬 AI Chat"
         
-        # Add to chat messages
-        current_history = st.session_state.chat_messages.get(st.session_state.current_agent, [])
-        current_history.append({
-            "role": "user", 
-            "content": st.session_state.example_query
-        })
-        st.session_state.chat_messages[st.session_state.current_agent] = current_history
+    #     # Add to chat messages
+    #     current_history = st.session_state.chat_messages.get(st.session_state.current_agent, [])
+    #     current_history.append({
+    #         "role": "user", 
+    #         "content": st.session_state.example_query
+    #     })
+    #     st.session_state.chat_messages[st.session_state.current_agent] = current_history
         
-        # Clear the example query
-        del st.session_state.example_query
-        st.rerun()
+    #     # Clear the example query
+    #     del st.session_state.example_query
+    #     st.rerun()
     
     # Render selected page
     if page == "🤖 Agent Selection":
