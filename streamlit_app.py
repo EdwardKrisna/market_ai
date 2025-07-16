@@ -585,7 +585,7 @@ def get_agent_instructions(agent_type: str, table_name: str) -> str:
     """Get agent-specific instructions with table name"""
     
     instructions = {
-        'condo': f"""You are a Condominium Property Expert AI for RHR specializing in residential condominiums using o4-mini.
+        'condo': f"""You are a Condominium Property Expert AI for RHR specializing in residential condominiums.
 Table: {table_name}
 
 CONDO EXPERTISE:
@@ -614,7 +614,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this condo property domain scope!""",
 
-        'hotel': f"""You are a Hotel Property Expert AI for RHR specializing in hospitality properties using o4-mini.
+        'hotel': f"""You are a Hotel Property Expert AI for RHR specializing in hospitality properties.
 Table: {table_name}
 
 HOTEL EXPERTISE:
@@ -644,7 +644,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this hotel property domain scope!""",
 
-        'office': f"""You are an Office Property Expert AI for RHR specializing in commercial office spaces using o4-mini.
+        'office': f"""You are an Office Property Expert AI for RHR specializing in commercial office spaces.
 Table: {table_name}
 
 OFFICE EXPERTISE:
@@ -674,7 +674,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this office property domain scope!""",
 
-        'hospital': f"""You are a Hospital Property Expert AI for RHR specializing in healthcare facilities using o4-mini.
+        'hospital': f"""You are a Hospital Property Expert AI for RHR specializing in healthcare facilities using.
 Table: {table_name}
 
 HOSPITAL EXPERTISE:
@@ -704,7 +704,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this hospital property domain scope!""",
 
-        'retail': f"""You are a Retail Property Expert AI for RHR specializing in commercial retail spaces using o4-mini.
+        'retail': f"""You are a Retail Property Expert AI for RHR specializing in commercial retail spaces using.
 Table: {table_name}
 
 RETAIL EXPERTISE:
@@ -734,7 +734,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this retail property domain scope!""",
 
-        'land': f"""You are a Land Market Expert AI for RHR specializing in land property analysis using o4-mini.
+        'land': f"""You are a Land Market Expert AI for RHR specializing in land property analysis using.
 Table: {table_name}
 
 LAND EXPERTISE:
@@ -767,7 +767,7 @@ CRITICAL: You can ONLY answer questions in this land property domain scope!"""
     return instructions.get(agent_type, f"You are a {agent_type} property expert using table {table_name}")
 
 def initialize_agents():
-    """Initialize all property agents using o4-mini"""
+    """Initialize all property agents using gpt-4.1"""
     
     # Set OpenAI API key
     try:
@@ -807,7 +807,7 @@ Generate appropriate SQL queries and use tools based on the user's request."""
         agent = Agent(
             name=f"{agent_type}_expert",
             instructions=full_instructions,
-            model="o4-mini",
+            model="gpt-4.1",
             tools=[
                 execute_sql_query,
                 create_map_visualization,
@@ -1153,7 +1153,7 @@ def render_ai_chat():
     current_config = AGENT_CONFIGS[st.session_state.current_agent]
     st.markdown(f"""
     <div class="agent-status">
-        {current_config['icon']} {current_config['name']} - Powered by o4-mini
+        {current_config['icon']} {current_config['name']} - Powered by GPT 4.1
     </div>
     """, unsafe_allow_html=True)
     
@@ -1177,7 +1177,7 @@ def render_ai_chat():
     
     with col3:
         if st.session_state.agents:
-            st.success("✅ o4-mini Agents Ready")
+            st.success("✅ Agents Ready")
         else:
             st.error("❌ Agents Not Ready")
     
@@ -1219,7 +1219,7 @@ def render_ai_chat():
                 st.markdown('<div class="cross-agent-indicator">🔗 Cross-Agent Query Detected</div>', unsafe_allow_html=True)
             
             # Process the query asynchronously
-            with st.spinner("🤖 Processing with o4-mini..."):
+            with st.spinner("🤖 Processing ..."):
                 try:
                     # Simple asyncio handling for Streamlit
                     try:
@@ -1283,7 +1283,6 @@ def render_ai_chat():
             chat_export = {
                 "timestamp": datetime.now().isoformat(),
                 "agent": st.session_state.current_agent,
-                "model": "o4-mini",
                 "chat_history": st.session_state.chat_messages[st.session_state.current_agent]
             }
             
@@ -1445,7 +1444,7 @@ def main():
     
     # Agent status
     if hasattr(st.session_state, 'agents') and st.session_state.agents:
-        st.sidebar.success("✅ o4-mini Agents Ready")
+        st.sidebar.success("✅ Agents Ready")
     else:
         st.sidebar.error("❌ Agents Not Ready")
     
