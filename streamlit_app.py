@@ -278,32 +278,30 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
         if len(map_df) == 0:
             return "Error: No valid coordinates found in the data"
         
-        # Create map
+        # Prepare customdata for tooltip
+        # Handle missing columns and fill with empty string or NaN
+        for col in ['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'distance_km']:
+            if col not in map_df.columns:
+                map_df[col] = ""
+        
+        # customdata must be a 2D numpy array
+        customdata = map_df[['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'distance_km']].values
+        
+        # Add markers with improved tooltip
         fig = go.Figure()
-        
-        # Create hover text
-        hover_text = []
-        for idx, row in map_df.iterrows():
-            text_parts = []
-            for col in ['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk']:
-                if col in row and pd.notna(row[col]):
-                    label = {'nama_objek': 'Objek', 'pemberi_tugas': 'Client', 
-                            'wadmpr': 'Provinsi', 'wadmkk': 'Kab/Kota'}.get(col, col)
-                    text_parts.append(f"{label}: {row[col]}")
-            
-            if 'distance_km' in row:
-                text_parts.append(f"Jarak: {row['distance_km']:.2f} km")
-            
-            hover_text.append("<br>".join(text_parts))
-        
-        # Add markers
         fig.add_trace(go.Scattermapbox(
             lat=map_df['latitude'],
             lon=map_df['longitude'],
             mode='markers',
             marker=dict(size=8, color='red'),
-            text=hover_text,
-            hovertemplate='%{text}<extra></extra>',
+            customdata=customdata,
+            hovertemplate=(
+                "Objek: %{customdata[0]}<br>"
+                "Client: %{customdata[1]}<br>"
+                "Provinsi: %{customdata[2]}<br>"
+                "Kab/Kota: %{customdata[3]}<br>"
+                "%{customdata[4]:.2f} km<extra></extra>"
+            ),
             name=f'Properties ({len(map_df)})'
         ))
         
