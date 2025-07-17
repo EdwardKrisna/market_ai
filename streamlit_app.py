@@ -221,8 +221,10 @@ def execute_sql_query(sql_query: str) -> str:
         result_df, query_msg = st.session_state.db_connection.execute_query(sql_query)
         
         if result_df is not None and len(result_df) > 0:
-            # Store for future reference
+            # Store for future reference WITH the query
             st.session_state.last_query_result = result_df.copy()
+            st.session_state.last_executed_query = sql_query  # Store the actual query
+            st.session_state.last_query_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             # Display results in expandable section
             with st.expander("📊 Query Results", expanded=False):
@@ -231,11 +233,14 @@ def execute_sql_query(sql_query: str) -> str:
             
             # Return formatted summary
             if len(result_df) == 1 and len(result_df.columns) == 1:
+                # Single value result (like COUNT)
                 value = result_df.iloc[0, 0]
                 return f"Query result: {value}"
             elif len(result_df) <= 10:
+                # Small result - show all
                 return f"Query returned {len(result_df)} rows:\n{result_df.to_string(index=False)}"
             else:
+                # Large result - show summary
                 return f"Query returned {len(result_df)} rows. Data displayed in expandable section above."
         else:
             return f"No results returned: {query_msg}"
@@ -260,14 +265,8 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
         # Clean and filter coordinates
         map_df = result_df.copy()
         map_df = map_df.dropna(subset=['latitude', 'longitude'])
-        
-        # Handle different coordinate formats based on agent type
-        if st.session_state.current_agent == 'land':
-            map_df['latitude'] = pd.to_numeric(map_df['latitude'], errors='coerce')
-            map_df['longitude'] = pd.to_numeric(map_df['longitude'], errors='coerce')
-        else:
-            map_df['latitude'] = pd.to_numeric(map_df['latitude'], errors='coerce')
-            map_df['longitude'] = pd.to_numeric(map_df['longitude'], errors='coerce')
+        map_df['latitude'] = pd.to_numeric(map_df['latitude'], errors='coerce')
+        map_df['longitude'] = pd.to_numeric(map_df['longitude'], errors='coerce')
         
         # Filter valid coordinates
         map_df = map_df[
@@ -282,39 +281,30 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
         # Create map
         fig = go.Figure()
         
-        # Create hover text based on agent type
+        # Create hover text
         hover_text = []
         for idx, row in map_df.iterrows():
             text_parts = []
-            if 'id' in row and pd.notna(row['id']):
-                text_parts.append(f"ID: {row['id']}")
-            
-            # Add relevant fields based on available columns
-            for col in ['project_name', 'building_name', 'object_name', 'alamat']:
+            for col in ['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk']:
                 if col in row and pd.notna(row[col]):
-                    text_parts.append(f"Name: {row[col]}")
-                    break
+                    label = {'nama_objek': 'Objek', 'pemberi_tugas': 'Client', 
+                            'wadmpr': 'Provinsi', 'wadmkk': 'Kab/Kota'}.get(col, col)
+                    text_parts.append(f"{label}: {row[col]}")
             
-            if 'grade' in row and pd.notna(row['grade']):
-                text_parts.append(f"Grade: {row['grade']}")
-            
-            if 'wadmpr' in row and pd.notna(row['wadmpr']):
-                text_parts.append(f"Province: {row['wadmpr']}")
+            if 'distance_km' in row:
+                text_parts.append(f"Jarak: {row['distance_km']:.2f} km")
             
             hover_text.append("<br>".join(text_parts))
-        
-        # Use agent-specific color
-        agent_color = AGENT_CONFIGS[st.session_state.current_agent]['color']
         
         # Add markers
         fig.add_trace(go.Scattermapbox(
             lat=map_df['latitude'],
             lon=map_df['longitude'],
             mode='markers',
-            marker=dict(size=8, color=agent_color),
+            marker=dict(size=8, color='red'),
             text=hover_text,
             hovertemplate='%{text}<extra></extra>',
-            name=f'{st.session_state.current_agent.title()} Properties'
+            name=f'Properties ({len(map_df)})'
         ))
         
         # Calculate center
@@ -333,7 +323,7 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
             title=title
         )
         
-        # Store for redisplay
+        # Store the figure in session state for persistence
         st.session_state.last_visualization = {
             "type": "map",
             "figure": fig,
@@ -345,13 +335,18 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
         
         # Store for future reference
         st.session_state.last_query_result = map_df.copy()
+        st.session_state.last_map_data = map_df.copy()
+        
+        st.session_state.last_executed_query = sql_query  # Store the actual query
+        st.session_state.last_query_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state.last_visualization_type = "map"
         
         # Show query details
         with st.expander("🗺️ Map Query Details", expanded=False):
             st.code(sql_query, language="sql")
             st.info(f"Mapped {len(map_df)} properties with valid coordinates")
         
-        return f"✅ Map successfully created with {len(map_df)} {st.session_state.current_agent} properties"
+        return f"✅ Map successfully created with {len(map_df)} properties"
         
     except Exception as e:
         return f"Error creating map: {str(e)}"
@@ -360,13 +355,18 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
 def create_chart_visualization(chart_type: str, sql_query: str, title: str, 
                               x_column: str = None, y_column: str = None, 
                               color_column: str = None) -> str:
-    """Create chart visualizations from SQL query results"""
+    """Create chart visualizations with smart color handling for line charts"""
     try:
         # Execute query
         result_df, query_msg = st.session_state.db_connection.execute_query(sql_query)
         
         if result_df is None or len(result_df) == 0:
             return f"Error: No data returned from query - {query_msg}"
+        
+        # Generate unique key for chart
+        import hashlib
+        import time
+        unique_key = hashlib.md5(f"{sql_query}_{title}_{time.time()}".encode()).hexdigest()[:8]
         
         # Auto-detect columns if not provided
         if x_column is None or x_column not in result_df.columns:
@@ -378,9 +378,38 @@ def create_chart_visualization(chart_type: str, sql_query: str, title: str,
         fig = None
         
         # Create chart based on type
-        if chart_type == "bar":
+        if chart_type == "line":
+            # FIX: Smart color column handling for line charts
+            line_df = result_df.copy()
+            
+            # Sort by x-axis
+            line_df = line_df.sort_values(x_column)
+            
+            # Check if we should use color column for line charts
+            use_color = None
+            if color_column and color_column in line_df.columns:
+                # Count unique values per color group
+                color_counts = line_df.groupby(color_column).size()
+                
+                # Only use color if multiple points per group (for proper lines)
+                if color_counts.min() >= 2:
+                    use_color = color_column
+                # If single points per color, don't use color (creates disconnected points)
+                else:
+                    use_color = None
+                    st.info(f"Removed color grouping for line chart - each category has only 1 point")
+            
+            # Create line chart with conditional color
+            fig = px.line(line_df, x=x_column, y=y_column, color=use_color, 
+                         title=title, markers=True)
+            
+            # Make lines more visible
+            fig.update_traces(line=dict(width=3), marker=dict(size=8))
+            
+        elif chart_type == "bar":
             fig = px.bar(result_df, x=x_column, y=y_column, color=color_column, title=title)
             fig.update_layout(xaxis_tickangle=-45)
+            
         elif chart_type == "pie":
             if y_column:
                 fig = px.pie(result_df, names=x_column, values=y_column, title=title)
@@ -388,13 +417,15 @@ def create_chart_visualization(chart_type: str, sql_query: str, title: str,
                 pie_data = result_df[x_column].value_counts().reset_index()
                 pie_data.columns = [x_column, 'count']
                 fig = px.pie(pie_data, names=x_column, values='count', title=title)
-        elif chart_type == "line":
-            fig = px.line(result_df, x=x_column, y=y_column, color=color_column, title=title, markers=True)
+                
         elif chart_type == "scatter":
             fig = px.scatter(result_df, x=x_column, y=y_column, color=color_column, title=title)
+            
         elif chart_type == "histogram":
             fig = px.histogram(result_df, x=x_column if x_column else y_column, color=color_column, title=title)
+            
         else:
+            # Default to bar chart
             fig = px.bar(result_df, x=x_column, y=y_column, color=color_column, title=title)
             fig.update_layout(xaxis_tickangle=-45)
         
@@ -405,20 +436,25 @@ def create_chart_visualization(chart_type: str, sql_query: str, title: str,
                 title_x=0.5,
                 margin=dict(l=50, r=50, t=80, b=100)
             )
-            
-            # Store for redisplay
+        
+        if fig:
+            # Store the figure in session state for persistence
             st.session_state.last_visualization = {
                 "type": "chart",
                 "figure": fig,
                 "chart_type": chart_type,
-                "title": title
+                "title": title,
+                "unique_key": unique_key
             }
             
-            # Display chart
-            st.plotly_chart(fig, use_container_width=True)
+            # Display chart with unique key
+            st.plotly_chart(fig, use_container_width=True, key=f"chart_{unique_key}")
             
             # Store for future reference
             st.session_state.last_query_result = result_df.copy()
+            st.session_state.last_executed_query = sql_query
+            st.session_state.last_query_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.session_state.last_visualization_type = "chart"
             
             # Show query details
             with st.expander("📊 Chart Query Details", expanded=False):
@@ -442,7 +478,7 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         
         # Set default title
         if title is None:
-            title = f"{st.session_state.current_agent.title()} properties within {radius_km} km from {location_name}"
+            title = f"Projects within {radius_km} km from {location_name}"
         
         # Geocode the location
         lat, lng, formatted_address = st.session_state.geocode_service.geocode_address(location_name)
@@ -453,41 +489,41 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         st.success(f"📍 Location found: {formatted_address}")
         st.info(f"Coordinates: {lat:.6f}, {lng:.6f}")
         
-        # Get current agent's table
-        table_name = AGENT_CONFIGS[st.session_state.current_agent]['table']
+        # FIX 1: Use hardcoded table name instead of secrets
+        table_name = "objek_penilaian"  # Direct table name instead of st.secrets["database"]["table_name"]
         
-        # Determine coordinate columns based on agent type
-        if st.session_state.current_agent == 'land':
-            lat_col = "CAST(latitude AS NUMERIC)"
-            lng_col = "CAST(longitude AS NUMERIC)" 
-            coord_filter = "latitude IS NOT NULL AND longitude IS NOT NULL AND latitude != '' AND longitude != ''"
-        else:
-            lat_col = "latitude"
-            lng_col = "longitude"
-            coord_filter = "latitude IS NOT NULL AND longitude IS NOT NULL AND latitude != 0 AND longitude != 0"
-        
-        # Query nearby properties using Haversine formula
+        # FIX 2: Improved query with better coordinate handling
         sql_query = f"""
-        SELECT 
-            id,
-            {lat_col} as latitude,
-            {lng_col} as longitude,
-            *,
-            (6371 * acos(
-                cos(radians({lat})) * cos(radians({lat_col})) * 
-                cos(radians({lng_col}) - radians({lng})) + 
-                sin(radians({lat})) * sin(radians({lat_col}))
-            )) as distance_km
+            SELECT 
+            nama_objek,
+            pemberi_tugas,
+            latitude,
+            longitude,
+            wadmpr,
+            wadmkk,
+            wadmkc,
+            jenis_objek_text,
+            cabang_text,
+            no_kontrak,
+            ST_DistanceSphere(
+                ST_MakePoint(longitude::double precision, latitude::double precision),
+                ST_MakePoint({lng}, {lat})
+            ) / 1000 AS distance_km
         FROM {table_name}
-        WHERE 
-            {coord_filter}
-            AND (6371 * acos(
-                cos(radians({lat})) * cos(radians({lat_col})) * 
-                cos(radians({lng_col}) - radians({lng})) + 
-                sin(radians({lat})) * sin(radians({lat_col}))
-            )) <= {radius_km}
+        WHERE
+            latitude IS NOT NULL 
+            AND longitude IS NOT NULL
+            AND latitude != 0 
+            AND longitude != 0
+            AND latitude BETWEEN -90 AND 90
+            AND longitude BETWEEN -180 AND 180
+            AND ST_DWithin(
+                ST_MakePoint(longitude::double precision, latitude::double precision)::geography,
+                ST_MakePoint({lng}, {lat})::geography,
+                {radius_km} * 1000
+            )
         ORDER BY distance_km ASC
-        LIMIT 50
+        LIMIT 100
         """
         
         # Execute query
@@ -508,31 +544,28 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                 name='Target Location'
             ))
             
-            # Add property markers
+            # Add project markers
             hover_text = []
             for idx, row in result_df.iterrows():
-                text_parts = [f"ID: {row['id']}"]
+                text_parts = [
+                    f"Objek: {row['nama_objek']}",
+                    f"Client: {row['pemberi_tugas']}",
+                    f"Provinsi: {row['wadmpr']}",
+                    f"Kab/Kota: {row['wadmkk']}",
+                    f"Jarak: {row['distance_km']:.2f} km"
+                ]
                 
-                # Add name field if available
-                for col in ['project_name', 'building_name', 'object_name', 'alamat']:
-                    if col in row and pd.notna(row[col]):
-                        text_parts.append(f"Name: {row[col]}")
-                        break
+                # Add contract number if available
+                if 'no_kontrak' in row and pd.notna(row['no_kontrak']):
+                    text_parts.insert(1, f"Kontrak: {row['no_kontrak']}")
                 
-                if 'wadmpr' in row and pd.notna(row['wadmpr']):
-                    text_parts.append(f"Province: {row['wadmpr']}")
-                
-                text_parts.append(f"Distance: {row['distance_km']:.2f} km")
                 hover_text.append("<br>".join(text_parts))
-            
-            # Use agent-specific color
-            agent_color = AGENT_CONFIGS[st.session_state.current_agent]['color']
             
             fig.add_trace(go.Scattermapbox(
                 lat=result_df['latitude'],
                 lon=result_df['longitude'],
                 mode='markers',
-                marker=dict(size=8, color=agent_color),
+                marker=dict(size=8, color='red'),
                 text=hover_text,
                 hovertemplate='%{text}<extra></extra>',
                 name=f'Properties ({len(result_df)})'
@@ -550,7 +583,7 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                 title=title
             )
             
-            # Store for redisplay
+            # Store the figure in session state for persistence
             st.session_state.last_visualization = {
                 "type": "nearby_map",
                 "figure": fig,
@@ -565,21 +598,27 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
 
             # Store for future reference
             st.session_state.last_query_result = result_df.copy()
+            st.session_state.last_map_data = result_df.copy()
+            
+            st.session_state.last_executed_query = sql_query
+            st.session_state.last_query_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            st.session_state.last_visualization_type = "nearby_search"
             
             # Show results table
-            with st.expander("📊 Nearby Properties Details", expanded=False):
+            with st.expander("📊 Nearby Projects Details", expanded=False):
                 st.code(sql_query, language="sql")
-                display_cols = ['id'] + [col for col in result_df.columns 
-                                    if col not in ['latitude', 'longitude', 'geometry']]
-                st.dataframe(result_df[display_cols].round(2), use_container_width=True)
+                st.dataframe(result_df[['nama_objek', 'pemberi_tugas', 'jenis_objek_text', 
+                            'wadmpr', 'wadmkk', 'distance_km']].round(2), 
+                use_container_width=True)
 
-            return f"✅ Found {len(result_df)} {st.session_state.current_agent} properties within {radius_km} km from {location_name}. Closest property is {result_df['distance_km'].min():.2f} km away."
+            return f"✅ Found {len(result_df)} projects within {radius_km} km from {location_name}. Closest project is {result_df['distance_km'].min():.2f} km away."
         
         else:
-            return f"❌ No {st.session_state.current_agent} properties found within {radius_km} km from {location_name}."
+            return f"❌ No projects found within {radius_km} km from {location_name}. Query message: {query_msg}"
         
     except Exception as e:
-        return f"Error finding nearby properties: {str(e)}"
+        return f"Error finding nearby projects: {str(e)}"
+
 
 def get_agent_instructions(agent_type: str, table_name: str) -> str:
     """Get agent-specific instructions with table name"""
@@ -594,17 +633,28 @@ CONDO EXPERTISE:
 - Unit counts and residential capacity
 - Condo grades and market positioning
 
-COLUMN DETAILS:
-- id (INTEGER), geometry (TEXT), latitude/longitude (DOUBLE PRECISION)
-- project_name (TEXT), address (TEXT), developer (TEXT)
-- grade (TEXT), unit (INTEGER), project_status (TEXT)
-- wadmpr (TEXT), wadmkk (TEXT), wadmkc (TEXT)
+COLUMN INFORMATION:
+- id (INTEGER)
+- geometry (TEXT): Geospatial geometry field (usually for PostGIS spatial data).
+- latitude, longitude (DOUBLE PRECISION): Official/project-recorded latitude and longitude coordinates.
+- completionyear (INTEGER)
+- q (INTEGER)
+- project_status (TEXT)
+- project_name (TEXT)
+- address (TEXT)
+- developer (TEXT)
+- area (TEXT)
+- precinct (TEXT)
+- grade (TEXT)
+- unit (INTEGER)
+- wadmpr (TEXT): Province (e.g., "DKI Jakarta").
+- wadmkk (TEXT): Regency/City (e.g., "Jakarta Selatan").
+- wadmkc (TEXT): District (e.g., "Tebet").
 
 SQL RULES:
 - unit is INTEGER - use directly: SUM(unit), AVG(unit)
 - NO PRICING DATA available in this table
 - For maps: Include id, latitude, longitude, project_name, address, grade
-- Always include LIMIT to prevent large results
 
 RESPONSE STYLE:
 - Always respond in user's language (auto-detect)
@@ -624,11 +674,27 @@ HOTEL EXPERTISE:
 - Event facilities and capacity
 
 COLUMN DETAILS:
-- id (INTEGER), geometry (TEXT), latitude/longitude (DOUBLE PRECISION)
-- project_name (TEXT), address (TEXT), developer (TEXT), management (TEXT)
-- star (TEXT), concept (TEXT), unit_developed (INTEGER), ballroom_capacity (INTEGER)
-- price_2016 to price_2025 (TEXT), price_avg (TEXT)
-- wadmpr (TEXT), wadmkk (TEXT), wadmkc (TEXT)
+- id (INTEGER)
+- geometry (TEXT)
+- latitude/longitude (DOUBLE PRECISION)
+- completionyear (INTEGER)
+- q (INTEGER)
+- project_status (TEXT)
+- project_name (TEXT)
+- address (TEXT)
+- developer (TEXT)
+- management (TEXT)
+- area (TEXT)
+- precinct (TEXT)
+- star (TEXT)
+- concept (TEXT)
+- unit_developed (INTEGER)
+- ballroom_capacity (INTEGER)
+- price_2016 to price_2025 (TEXT)
+- price_avg (TEXT)
+- wadmpr (TEXT)
+- wadmkk (TEXT)
+- wadmkc (TEXT)
 
 SQL RULES:
 - unit_developed, ballroom_capacity are INTEGER - use directly
@@ -714,11 +780,20 @@ RETAIL EXPERTISE:
 - Developer and project performance
 
 COLUMN DETAILS:
-- id (INTEGER), geometry (TEXT), latitude/longitude (DOUBLE PRECISION)
-- project_name (TEXT), address (TEXT), developer (TEXT)
-- grade (TEXT), nla (TEXT), gfa (TEXT)
-- price_2016 to price_2025 (TEXT), price_avg (TEXT)
-- wadmpr (TEXT), wadmkk (TEXT), wadmkc (TEXT)
+- id (INTEGER)
+- geometry (TEXT)
+- latitude/longitude (DOUBLE PRECISION)
+- project_name (TEXT)
+- address (TEXT)
+- developer (TEXT)
+- grade (TEXT)
+- nla (TEXT)
+- gfa (TEXT)
+- price_2016 to price_2025 (TEXT)
+- price_avg (TEXT)
+- wadmpr (TEXT)
+- wadmkk (TEXT)
+- wadmkc (TEXT)
 
 SQL RULES:
 - Price columns are TEXT - use CAST(price_avg AS NUMERIC) for calculations
@@ -734,7 +809,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this retail property domain scope!""",
 
-        'land': f"""You are a Land Market Expert AI for a public appraisal services office in Indonesia specializing in land property analysis using.
+        'land': f"""You are a Land Market Expert for a public appraisal services office in Indonesia specializing in land property analysis using.
 Table: {table_name}
 
 LAND EXPERTISE:
@@ -744,16 +819,27 @@ LAND EXPERTISE:
 - Area-based pricing comparison
 
 COLUMN DETAILS:
-- id (INTEGER), alamat (TEXT), latitude/longitude (TEXT)
-- luas_tanah (FLOAT), hpm (FLOAT), tahun_pengambilan_data (INTEGER)
-- bentuk_tapak (TEXT), posisi_tapak (TEXT), orientasi (TEXT)
-- wadmpr (TEXT), wadmkk (TEXT), wadmkc (TEXT), wadmkd (TEXT)
+- id (INTEGER)
+- alamat (TEXT): Property address.
+- latitude/longitude (TEXT): Official/project-recorded latitude and longitude coordinates.
+- jenis_objek (INTEGER): Property Object Type in number (e.g., 1,2, ect.).
+- luas_tanah (FLOAT): Property area in squared meter.
+- bentuk_tapak (TEXT): Shape of the property site (Letter L, Persegi Panjang, Kipas, Persegi, Trapesium, Tidak Beraturan, Ngantong, Menggantung).
+- posisi_tapak (TEXT): Property site position (Diapit Jalan, Helikopter, Sudut/Hook, Buntu, Tengah, Lainnya, Tusuk Sate, Ujung, Hook, Pojok, Tusuk Sata (Tusuk sate and Tusuk Sata have the same meaning, so just SUM it)).
+- orientasi (TEXT): Property orientation (Selatan, Barat Daya, Timur Laut, Barat, Utara, Timur, Tenggara, Barat Laut).
+- lebar_jalan_di_depan (FLOAT): Wide road ahead the property in meter.
+- kondisi_wilayah_sekitar (TEXT): Condition of the area around the property (Perumahan Menengah, Industri, Industri/Pergudangan Besar, Campuran, Industri / Perdagangan UKM, Rawan Bencana, Perumahan Sederhana, Perumahan Mewah, Komersial UKM, Kosong Pertanian, Lainnya, Pemerintahan, Dekat Sungai / Parit, Hijau, Dekat TPU, Komersial Primer, Komersial Menengah, Industri / Perdagangan Besar, Komersial, Perumahan).
+- jenis_jalan_utama (TEXT): Type of main road (Jalan, Gang)
+- perkerasan_jalan (TEXT): Property road paving (Sirtu, Lainnya, Aspal Hotmix, Tanah, Aspal Siram, Beton, Aspal, Aspak Hotmix, Paving)
+- hpm (FLOAT) : Property Price per meter.
+- tahun_pengambilan_data (INTEGER) : Year per date of the property price being taken or being survey (not the year of the property build).
+- wadmpr (TEXT): Province (e.g., "DKI Jakarta").
+- wadmkk (TEXT): Regency/City (e.g., "Jakarta Selatan").
+- wadmkc (TEXT): District (e.g., "Tebet").
+- wadmkd (TEXT): Subdistrict/village (e.g., "Manggarai").
 
 SQL RULES:
-- hpm, luas_tanah are FLOAT - use directly: AVG(hpm), SUM(luas_tanah)
-- latitude/longitude are TEXT - use CAST(latitude AS NUMERIC)
-- For maps: Include id, CAST(latitude AS NUMERIC), CAST(longitude AS NUMERIC), alamat, hpm
-- Always include LIMIT to prevent large results
+- Always include LIMIT if user want to show the data in table to prevent large results, if not just calculate or analyze.
 
 RESPONSE STYLE:
 - Always respond in user's language (auto-detect)
@@ -761,7 +847,7 @@ RESPONSE STYLE:
 - Use tools appropriately based on request type
 - Handle follow-up questions using context
 
-CRITICAL: You can ONLY answer questions in this land property domain scope!"""
+CRITICAL: You can ONLY answer questions in this land property domain scope! """
     }
     
     return instructions.get(agent_type, f"You are a {agent_type} property expert using table {table_name}")
@@ -1273,91 +1359,6 @@ def render_ai_chat():
                 use_container_width=True
             )
 
-# def render_examples():
-#     """Render example queries to help users"""
-#     st.markdown('<div class="section-header">📝 Example Queries</div>', unsafe_allow_html=True)
-    
-#     # Current agent examples
-#     current_agent = st.session_state.current_agent
-#     current_config = AGENT_CONFIGS[current_agent]
-    
-#     st.markdown(f"### {current_config['icon']} {current_config['name']} Examples")
-    
-#     agent_examples = {
-#         'condo': [
-#             "Berapa total unit condo di Jakarta?",
-#             "Siapa developer terbesar untuk proyek condo?",
-#             "Buatkan peta semua proyek condo di Bali",
-#             "Grafik bar developer vs jumlah unit",
-#             "Proyek condo terdekat dari Mall Taman Anggrek"
-#         ],
-#         'hotel': [
-#             "Berapa hotel bintang 5 di Indonesia?",
-#             "Buatkan peta hotel di Yogyakarta",
-#             "Grafik pie distribusi hotel per bintang",
-#             "Hotel terdekat dari Monas radius 2km",
-#             "Siapa management hotel terbesar?"
-#         ],
-#         'office': [
-#             "Berapa rata-rata harga office Grade A?",
-#             "Buatkan peta office building di Jakarta",
-#             "Grafik harga office per tahun",
-#             "Office terdekat dari Sudirman radius 1km",
-#             "Perbandingan harga office Grade A vs B"
-#         ],
-#         'hospital': [
-#             "Berapa total kapasitas tempat tidur rumah sakit?",
-#             "Buatkan peta rumah sakit di Surabaya",
-#             "Grafik distribusi rumah sakit per grade",
-#             "Rumah sakit terdekat dari Senayan",
-#             "Rumah sakit yang menerima BPJS"
-#         ],
-#         'retail': [
-#             "Berapa rata-rata harga retail per meter?",
-#             "Buatkan peta retail space di Bandung",
-#             "Grafik harga retail per tahun",
-#             "Retail terdekat dari Plaza Indonesia",
-#             "Developer retail terbesar di Indonesia"
-#         ],
-#         'land': [
-#             "Berapa harga tanah rata-rata per meter di Jakarta?",
-#             "Buatkan peta tanah di Bekasi",
-#             "Grafik harga tanah per provinsi",
-#             "Tanah terdekat dari Bogor radius 5km",
-#             "Perbandingan harga tanah per orientasi"
-#         ]
-#     }
-    
-#     examples = agent_examples.get(current_agent, [])
-    
-#     for i, example in enumerate(examples):
-#         col1, col2 = st.columns([4, 1])
-#         with col1:
-#             st.write(f"• {example}")
-#         with col2:
-#             if st.button("Try", key=f"try_{current_agent}_{i}", use_container_width=True):
-#                 st.session_state.example_query = example
-#                 st.rerun()
-    
-#     # Cross-agent examples
-#     st.markdown("### 🔗 Cross-Agent Examples")
-    
-#     cross_agent_examples = [
-#         "#condo vs hotel - Compare condo and hotel properties",
-#         "#office vs retail - Compare office and retail spaces",
-#         "#hospital vs condo - Compare hospital and condo locations",
-#         "#land vs office - Compare land prices and office locations"
-#     ]
-    
-#     for i, example in enumerate(cross_agent_examples):
-#         col1, col2 = st.columns([4, 1])
-#         with col1:
-#             st.write(f"• {example}")
-#         with col2:
-#             if st.button("Try", key=f"try_cross_{i}", use_container_width=True):
-#                 st.session_state.example_query = example
-#                 st.rerun()
-
 def main():
     """Main application"""
     st.markdown('<h1 class="main-header">🏢 RHR Multi-Agent Property AI</h1>', unsafe_allow_html=True)
@@ -1385,31 +1386,12 @@ def main():
     if st.sidebar.button("Logout"):
         st.session_state.authenticated = False
         st.rerun()
-    
-    # # Handle example query injection
-    # if hasattr(st.session_state, 'example_query'):
-    #     # Switch to chat tab and inject query
-    #     page = "💬 AI Chat"
-        
-    #     # Add to chat messages
-    #     current_history = st.session_state.chat_messages.get(st.session_state.current_agent, [])
-    #     current_history.append({
-    #         "role": "user", 
-    #         "content": st.session_state.example_query
-    #     })
-    #     st.session_state.chat_messages[st.session_state.current_agent] = current_history
-        
-    #     # Clear the example query
-    #     del st.session_state.example_query
-    #     st.rerun()
-    
+
     # Render selected page
     if page == "🤖 Agent Selection":
         render_agent_selection()
     elif page == "💬 AI Chat":
         render_ai_chat()
-    # elif page == "📝 Examples":
-    #     render_examples()
     
     # Sidebar status
     st.sidebar.markdown("---")
