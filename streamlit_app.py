@@ -467,11 +467,346 @@ def create_chart_visualization(chart_type: str, sql_query: str, title: str,
     except Exception as e:
         return f"Error creating chart: {str(e)}"
 
+
+def _create_hover_text(result_df, agent_type: str) -> list:
+    """Create hover text for map markers with error handling"""
+    
+    hover_text = []
+    
+    for idx, row in result_df.iterrows():
+        try:
+            text_parts = [f"ID: {row.get('id', 'Unknown')}"]
+            
+            # Add agent-specific information
+            if agent_type == 'land':
+                if 'alamat' in row and pd.notna(row['alamat']) and str(row['alamat']).strip():
+                    text_parts.append(f"Alamat: {row['alamat']}")
+                if 'hpm' in row and pd.notna(row['hpm']) and row['hpm'] != 0:
+                    text_parts.append(f"HPM: Rp {row['hpm']:,.0f}/m²")
+                if 'luas_tanah' in row and pd.notna(row['luas_tanah']) and row['luas_tanah'] != 0:
+                    text_parts.append(f"Luas: {row['luas_tanah']:,.0f} m²")
+            else:
+                # For other property types
+                excluded_cols = ['id', 'latitude', 'longitude', 'distance_km']
+                for col in result_df.columns:
+                    if col not in excluded_cols and pd.notna(row[col]) and str(row[col]).strip():
+                        value = str(row[col])
+                        # Limit text length for readability
+                        if len(value) > 50:
+                            value = value[:47] + "..."
+                        text_parts.append(f"{col.replace('_', ' ').title()}: {value}")
+            
+            # Add distance information
+            if 'distance_km' in row and pd.notna(row['distance_km']):
+                text_parts.append(f"Jarak: {row['distance_km']:.2f} km")
+            
+            hover_text.append("<br>".join(text_parts))
+            
+        except Exception:
+            # Fallback hover text
+            hover_text.append(f"ID: {row.get('id', 'Unknown')}<br>Error loading details")
+    
+    return hover_text
+
+
+def _store_query_results(result_df, sql_query: str, location_name: str, radius_km: float):
+    """Updated store function that includes location context"""
+    
+    try:
+        # Global storage
+        st.session_state.last_query_result = result_df.copy()
+        st.session_state.last_map_data = result_df.copy()
+        st.session_state.last_executed_query = sql_query
+        st.session_state.last_query_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        st.session_state.last_visualization_type = "nearby_search"
+        
+        # Agent memory storage
+        current_agent = st.session_state.current_agent
+        agent_memory = st.session_state.agent_memory[current_agent]
+        
+        agent_memory['map_data'] = result_df.copy()
+        agent_memory['last_location'] = location_name
+        agent_memory['last_search_radius'] = radius_km
+        agent_memory['property_count'] = len(result_df)
+        
+        # Store query record
+        query_record = {
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'location': location_name,
+            'radius': radius_km,
+            'count': len(result_df),
+            'sql': sql_query[:100] + "..." if len(sql_query) > 100 else sql_query
+        }
+        
+        agent_memory['recent_queries'].append(query_record)
+        if len(agent_memory['recent_queries']) > 5:
+            agent_memory['recent_queries'].pop(0)
+            
+    except Exception as e:
+        st.warning(f"Could not store results in memory: {str(e)}")
+
+
+
+def _display_results_table(result_df, sql_query: str, display_columns: list):
+    """Display results table with error handling"""
+    
+    with st.expander("📊 Nearby Projects Details", expanded=False):
+        # Show SQL query
+        st.code(sql_query, language="sql")
+        
+        try:
+            # Determine which columns to display
+            if display_columns:
+                available_cols = [col for col in display_columns if col in result_df.columns]
+                if available_cols:
+                    display_df = result_df[available_cols].copy()
+                else:
+                    display_df = result_df.copy()
+            else:
+                display_df = result_df.copy()
+            
+            # Round numeric columns for better display
+            numeric_cols = display_df.select_dtypes(include=['number']).columns
+            if len(numeric_cols) > 0:
+                display_df[numeric_cols] = display_df[numeric_cols].round(2)
+            
+            # Display dataframe
+            st.dataframe(display_df, use_container_width=True)
+            
+        except Exception as table_error:
+            st.error(f"Error displaying results table: {str(table_error)}")
+            st.write(f"Found {len(result_df)} properties, but unable to display detailed table.")
+            # Show basic info as fallback
+            st.write("Basic info:", result_df.columns.tolist())
+
+
+def _build_nearby_query(agent_type: str, table_name: str, lat: float, lng: float, radius_km: float) -> tuple:
+    """Build agent-specific SQL query with robust coordinate filtering"""
+    
+    if agent_type == 'land':
+        # Land agent uses TEXT coordinates that need casting
+        sql_query = f"""
+            SELECT 
+                id,
+                alamat,
+                CAST(latitude AS NUMERIC) as latitude,
+                CAST(longitude AS NUMERIC) as longitude,
+                wadmpr,
+                wadmkk,
+                wadmkc,
+                wadmkd,
+                hpm,
+                luas_tanah,
+                ST_DistanceSphere(
+                    ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC)),
+                    ST_MakePoint({lng}, {lat})
+                ) / 1000 AS distance_km
+            FROM {table_name}
+            WHERE
+                latitude IS NOT NULL 
+                AND longitude IS NOT NULL
+                AND latitude != '' 
+                AND longitude != ''
+                AND latitude != '0'
+                AND longitude != '0'
+                AND latitude NOT ILIKE '%null%'
+                AND longitude NOT ILIKE '%null%'
+                AND latitude NOT ILIKE '%nan%'
+                AND longitude NOT ILIKE '%nan%'
+                AND latitude ~ '^-?[0-9]+\.?[0-9]*$'
+                AND longitude ~ '^-?[0-9]+\.?[0-9]*$'
+                AND CAST(latitude AS NUMERIC) BETWEEN -90 AND 90
+                AND CAST(longitude AS NUMERIC) BETWEEN -180 AND 180
+                AND CAST(latitude AS NUMERIC) != 0
+                AND CAST(longitude AS NUMERIC) != 0
+                AND ST_DWithin(
+                    ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC))::geography,
+                    ST_MakePoint({lng}, {lat})::geography,
+                    {radius_km} * 1000
+                )
+            ORDER BY distance_km ASC
+            LIMIT 100
+        """
+        display_columns = ['alamat', 'wadmpr', 'wadmkk', 'wadmkc', 'hpm', 'luas_tanah', 'distance_km']
+        
+    else:
+        # Other agents use NUMERIC coordinates
+        agent_columns = _get_agent_columns(agent_type)
+        main_column = agent_columns['main']
+        additional_columns = agent_columns['additional']
+        
+        sql_query = f"""
+            SELECT 
+                id,
+                {main_column},
+                latitude,
+                longitude,
+                {additional_columns},
+                wadmpr,
+                wadmkk,
+                wadmkc,
+                ST_DistanceSphere(
+                    ST_MakePoint(longitude, latitude),
+                    ST_MakePoint({lng}, {lat})
+                ) / 1000 AS distance_km
+            FROM {table_name}
+            WHERE
+                latitude IS NOT NULL 
+                AND longitude IS NOT NULL
+                AND latitude != 0 
+                AND longitude != 0
+                AND latitude BETWEEN -90 AND 90
+                AND longitude BETWEEN -180 AND 180
+                AND NOT (latitude = 0 AND longitude = 0)
+                AND ST_DWithin(
+                    ST_MakePoint(longitude, latitude)::geography,
+                    ST_MakePoint({lng}, {lat})::geography,
+                    {radius_km} * 1000
+                )
+            ORDER BY distance_km ASC
+            LIMIT 100
+        """
+        display_columns = [main_column, 'wadmpr', 'wadmkk', 'distance_km']
+    
+    return sql_query, display_columns
+
+
+def _get_agent_columns(agent_type: str) -> dict:
+    """Get agent-specific column configuration"""
+    
+    column_config = {
+        'condo': {
+            'main': 'project_name',
+            'additional': 'address, developer, grade, unit'
+        },
+        'hotel': {
+            'main': 'project_name',
+            'additional': 'address, star, management, unit_developed'
+        },
+        'office': {
+            'main': 'building_name',
+            'additional': 'grade, "owner/developer", price_avg'
+        },
+        'hospital': {
+            'main': 'object_name',
+            'additional': 'type, grade, beds_capacity'
+        },
+        'retail': {
+            'main': 'project_name',
+            'additional': 'address, developer, grade, price_avg'
+        }
+    }
+    
+    return column_config.get(agent_type, {'main': 'id', 'additional': ''})
+
+
+def _clean_coordinate_data(result_df, agent_type: str):
+    """Clean and validate coordinate data after query execution"""
+    
+    if result_df is None or len(result_df) == 0:
+        return None
+    
+    try:
+        # Make a copy to avoid modifying original
+        cleaned_df = result_df.copy()
+        
+        # Handle coordinate conversion based on agent type
+        if agent_type != 'land':
+            # For non-land agents, ensure coordinates are numeric
+            cleaned_df['latitude'] = pd.to_numeric(cleaned_df['latitude'], errors='coerce')
+            cleaned_df['longitude'] = pd.to_numeric(cleaned_df['longitude'], errors='coerce')
+        
+        # Remove rows with NaN coordinates
+        cleaned_df = cleaned_df.dropna(subset=['latitude', 'longitude'])
+        
+        # Filter out invalid coordinate ranges
+        cleaned_df = cleaned_df[
+            (cleaned_df['latitude'] >= -90) & (cleaned_df['latitude'] <= 90) &
+            (cleaned_df['longitude'] >= -180) & (cleaned_df['longitude'] <= 180) &
+            (cleaned_df['latitude'] != 0) & (cleaned_df['longitude'] != 0)
+        ]
+        
+        # Remove duplicate locations (optional)
+        cleaned_df = cleaned_df.drop_duplicates(subset=['latitude', 'longitude'])
+        
+        return cleaned_df if len(cleaned_df) > 0 else None
+        
+    except Exception as e:
+        st.error(f"Error cleaning coordinate data: {str(e)}")
+        return None
+
+
+def _create_nearby_map(result_df, agent_type: str, target_lat: float, target_lng: float, 
+                      location_name: str, formatted_address: str, title: str) -> bool:
+    """Create map visualization with error handling"""
+    
+    try:
+        # Create map figure
+        fig = go.Figure()
+        
+        # Add target location marker
+        fig.add_trace(go.Scattermapbox(
+            lat=[target_lat],
+            lon=[target_lng],
+            mode='markers',
+            marker=dict(size=15, color='blue', symbol='star'),
+            text=[f"📍 {location_name}<br>{formatted_address}"],
+            hovertemplate='%{text}<extra></extra>',
+            name='Target Location'
+        ))
+        
+        # Create hover text for properties
+        hover_text = _create_hover_text(result_df, agent_type)
+        
+        # Add property markers
+        marker_color = AGENT_CONFIGS[agent_type]['color']
+        fig.add_trace(go.Scattermapbox(
+            lat=result_df['latitude'],
+            lon=result_df['longitude'],
+            mode='markers',
+            marker=dict(size=8, color=marker_color),
+            text=hover_text,
+            hovertemplate='%{text}<extra></extra>',
+            name=f'{agent_type.title()} Properties ({len(result_df)})'
+        ))
+        
+        # Configure map layout
+        fig.update_layout(
+            mapbox=dict(
+                style="open-street-map",
+                center=dict(lat=target_lat, lon=target_lng),
+                zoom=12
+            ),
+            height=500,
+            margin=dict(l=0, r=0, t=30, b=0),
+            title=title
+        )
+        
+        # Store visualization for persistence
+        st.session_state.last_visualization = {
+            "type": "nearby_map",
+            "figure": fig,
+            "title": title,
+            "location": location_name,
+            "radius": 2.0,  # Default radius for persistence
+            "count": len(result_df)
+        }
+        
+        # Display map
+        st.plotly_chart(fig, use_container_width=True)
+        
+        return True
+        
+    except Exception as e:
+        st.error(f"Error creating map visualization: {str(e)}")
+        return False
+
 @function_tool
 def find_nearby_projects(location_name: str, radius_km: float = 1.0, 
                         title: str = None) -> str:
-    """Find and map projects near a specific location using geocoding"""
+    """Find and map projects near a specific location using geocoding with robust error handling"""
     try:
+        # Check geocoding service availability
         if not hasattr(st.session_state, 'geocode_service') or st.session_state.geocode_service is None:
             return "Error: Geocoding service not available. Please add Google Maps API key."
         
@@ -479,213 +814,86 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         if title is None:
             title = f"Projects within {radius_km} km from {location_name}"
         
-        # Geocode the location
+        # Geocode the target location
         lat, lng, formatted_address = st.session_state.geocode_service.geocode_address(location_name)
         
         if lat is None or lng is None:
-            return f"Error: Could not find coordinates for location '{location_name}'. Try being more specific."
+            return f"Error: Could not find coordinates for location '{location_name}'. Please try a more specific location name."
         
+        # Display geocoding results
         st.success(f"📍 Location found: {formatted_address}")
         st.info(f"Coordinates: {lat:.6f}, {lng:.6f}")
         
-        # Use the table from the current active agent
+        # Get current agent configuration
         current_agent_type = st.session_state.current_agent
         table_name = AGENT_CONFIGS[current_agent_type]['table']
         
-        # Build query based on agent type
-        if current_agent_type == 'land':
-            # For land agent - use engineered_property_data table
-            sql_query = f"""
-                SELECT 
-                    id,
-                    alamat,
-                    CAST(latitude AS NUMERIC) as latitude,
-                    CAST(longitude AS NUMERIC) as longitude,
-                    wadmpr,
-                    wadmkk,
-                    wadmkc,
-                    wadmkd,
-                    hpm,
-                    luas_tanah,
-                    ST_DistanceSphere(
-                        ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC)),
-                        ST_MakePoint({lng}, {lat})
-                    ) / 1000 AS distance_km
-                FROM {table_name}
-                WHERE
-                    latitude IS NOT NULL 
-                    AND longitude IS NOT NULL
-                    AND latitude != '' 
-                    AND longitude != ''
-                    AND latitude NOT LIKE '%null%'
-                    AND longitude NOT LIKE '%null%'
-                    AND ST_DWithin(
-                        ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC))::geography,
-                        ST_MakePoint({lng}, {lat})::geography,
-                        {radius_km} * 1000
-                    )
-                ORDER BY distance_km ASC
-                LIMIT 100
-            """
-            display_columns = ['alamat', 'wadmpr', 'wadmkk', 'wadmkc', 'hpm', 'luas_tanah', 'distance_km']
-            
-        else:
-            # For other agents - use their respective tables
-            if current_agent_type == 'condo':
-                main_column = 'project_name'
-                additional_columns = 'address, developer, grade, unit'
-            elif current_agent_type == 'hotel':
-                main_column = 'project_name'
-                additional_columns = 'address, star, management, unit_developed'
-            elif current_agent_type == 'office':
-                main_column = 'building_name'
-                additional_columns = 'grade, "owner/developer", price_avg'
-            elif current_agent_type == 'hospital':
-                main_column = 'object_name'
-                additional_columns = 'type, grade, beds_capacity'
-            elif current_agent_type == 'retail':
-                main_column = 'project_name'
-                additional_columns = 'address, developer, grade, price_avg'
-            else:
-                main_column = 'id'
-                additional_columns = ''
-            
-            sql_query = f"""
-                SELECT 
-                    id,
-                    {main_column},
-                    latitude,
-                    longitude,
-                    {additional_columns},
-                    wadmpr,
-                    wadmkk,
-                    wadmkc,
-                    ST_DistanceSphere(
-                        ST_MakePoint(longitude, latitude),
-                        ST_MakePoint({lng}, {lat})
-                    ) / 1000 AS distance_km
-                FROM {table_name}
-                WHERE
-                    latitude IS NOT NULL 
-                    AND longitude IS NOT NULL
-                    AND latitude != 0 
-                    AND longitude != 0
-                    AND ST_DWithin(
-                        ST_MakePoint(longitude, latitude)::geography,
-                        ST_MakePoint({lng}, {lat})::geography,
-                        {radius_km} * 1000
-                    )
-                ORDER BY distance_km ASC
-                LIMIT 100
-            """
-            display_columns = [main_column, 'wadmpr', 'wadmkk', 'distance_km']
+        # Build agent-specific SQL query with robust error handling
+        sql_query, display_columns = _build_nearby_query(current_agent_type, table_name, lat, lng, radius_km)
         
-        # Execute query
-        result_df, query_msg = st.session_state.db_connection.execute_query(sql_query)
+        # Execute query with error handling
+        try:
+            result_df, query_msg = st.session_state.db_connection.execute_query(sql_query)
+        except Exception as query_error:
+            return f"❌ Database query failed: {str(query_error)}. This may be due to invalid coordinate data in the database."
         
-        if result_df is not None and len(result_df) > 0:
-            # Create enhanced map with reference point
-            fig = go.Figure()
-            
-            # Add reference point (target location)
-            fig.add_trace(go.Scattermapbox(
-                lat=[lat],
-                lon=[lng],
-                mode='markers',
-                marker=dict(size=15, color='blue', symbol='star'),
-                text=[f"📍 {location_name}<br>{formatted_address}"],
-                hovertemplate='%{text}<extra></extra>',
-                name='Target Location'
-            ))
-            
-            # Add project markers with dynamic hover text
-            hover_text = []
-            for idx, row in result_df.iterrows():
-                text_parts = [f"ID: {row['id']}"]
-                
-                # Add agent-specific information
-                if current_agent_type == 'land':
-                    if 'alamat' in row and pd.notna(row['alamat']):
-                        text_parts.append(f"Alamat: {row['alamat']}")
-                    if 'hpm' in row and pd.notna(row['hpm']):
-                        text_parts.append(f"HPM: Rp {row['hpm']:,.0f}/m²")
-                    if 'luas_tanah' in row and pd.notna(row['luas_tanah']):
-                        text_parts.append(f"Luas: {row['luas_tanah']:,.0f} m²")
-                else:
-                    # For other property types
-                    for col in result_df.columns:
-                        if col not in ['id', 'latitude', 'longitude', 'distance_km'] and pd.notna(row[col]):
-                            text_parts.append(f"{col}: {row[col]}")
-                
-                text_parts.append(f"Jarak: {row['distance_km']:.2f} km")
-                hover_text.append("<br>".join(text_parts))
-            
-            # Use agent-specific color
-            marker_color = AGENT_CONFIGS[current_agent_type]['color']
-            
-            fig.add_trace(go.Scattermapbox(
-                lat=result_df['latitude'],
-                lon=result_df['longitude'],
-                mode='markers',
-                marker=dict(size=8, color=marker_color),
-                text=hover_text,
-                hovertemplate='%{text}<extra></extra>',
-                name=f'{current_agent_type.title()} Properties ({len(result_df)})'
-            ))
-            
-            # Map layout centered on target location
-            fig.update_layout(
-                mapbox=dict(
-                    style="open-street-map",
-                    center=dict(lat=lat, lon=lng),
-                    zoom=12
-                ),
-                height=500,
-                margin=dict(l=0, r=0, t=30, b=0),
-                title=title
-            )
-            
-            # Store the figure in session state for persistence
-            st.session_state.last_visualization = {
-                "type": "nearby_map",
-                "figure": fig,
-                "title": title,
-                "location": location_name,
-                "radius": radius_km,
-                "count": len(result_df)
-            }
-
-            # Display map
-            st.plotly_chart(fig, use_container_width=True)
-
-            # Store for future reference
-            st.session_state.last_query_result = result_df.copy()
-            st.session_state.last_map_data = result_df.copy()
-            
-            st.session_state.last_executed_query = sql_query
-            st.session_state.last_query_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            st.session_state.last_visualization_type = "nearby_search"
-            
-            # Show results table
-            with st.expander("📊 Nearby Projects Details", expanded=False):
-                st.code(sql_query, language="sql")
-                if display_columns:
-                    available_cols = [col for col in display_columns if col in result_df.columns]
-                    if available_cols:
-                        st.dataframe(result_df[available_cols].round(2), use_container_width=True)
-                    else:
-                        st.dataframe(result_df.round(2), use_container_width=True)
-                else:
-                    st.dataframe(result_df.round(2), use_container_width=True)
-
-            return f"✅ Found {len(result_df)} {current_agent_type} properties within {radius_km} km from {location_name}. Closest property is {result_df['distance_km'].min():.2f} km away."
+        # Validate and clean results
+        cleaned_df = _clean_coordinate_data(result_df, current_agent_type)
         
-        else:
-            return f"❌ No {current_agent_type} properties found within {radius_km} km from {location_name}. Query message: {query_msg}"
+        if cleaned_df is None or len(cleaned_df) == 0:
+            return f"❌ No valid {current_agent_type} properties found within {radius_km} km from {location_name}. All coordinates in the database appear to be invalid, null, or outside the search radius."
+        
+        # Create map visualization
+        map_success = _create_nearby_map(cleaned_df, current_agent_type, lat, lng, location_name, formatted_address, title)
+        
+        if not map_success:
+            return f"⚠️ Found {len(cleaned_df)} properties but failed to create map visualization."
+        
+        # Store results for future reference
+        _store_query_results(cleaned_df, sql_query, location_name, radius_km)
+
+        
+        # Display detailed results table
+        _display_results_table(cleaned_df, sql_query, display_columns)
+        
+        # Return success message
+        closest_distance = cleaned_df['distance_km'].min()
+        return f"✅ Found {len(cleaned_df)} {current_agent_type} properties within {radius_km} km from {location_name}. Closest property is {closest_distance:.2f} km away."
         
     except Exception as e:
-        return f"Error finding nearby projects: {str(e)}"
+        return f"❌ Unexpected error in nearby search: {str(e)}"
 
+
+@function_tool
+def get_agent_memory_context() -> str:
+    """Get current agent's memory context for enhanced responses"""
+    try:
+        current_agent = st.session_state.current_agent
+        memory = st.session_state.agent_memory[current_agent]
+        
+        context_parts = []
+        
+        # Add current map data context
+        if memory['map_data'] is not None and len(memory['map_data']) > 0:
+            context_parts.append(f"CURRENT MAP DATA:")
+            context_parts.append(f"- Location: {memory['last_location']}")
+            context_parts.append(f"- Radius: {memory['last_search_radius']} km")
+            context_parts.append(f"- Properties found: {memory['property_count']}")
+            
+            # Add sample of current data
+            sample_data = memory['map_data'].head(3)
+            context_parts.append(f"- Sample properties: {sample_data.to_dict('records')}")
+        
+        # Add recent search history
+        if memory['recent_queries']:
+            context_parts.append(f"\nRECENT SEARCHES:")
+            for query in memory['recent_queries'][-3:]:  # Last 3 searches
+                context_parts.append(f"- {query['timestamp']}: {query['location']} ({query['count']} found)")
+        
+        return "\n".join(context_parts) if context_parts else "No previous context available."
+        
+    except Exception as e:
+        return f"Error accessing memory: {str(e)}"
 
 def get_agent_instructions(agent_type: str, table_name: str) -> str:
     """Get agent-specific instructions with table name"""
@@ -1080,6 +1288,7 @@ def initialize_geocode_service():
 
 # Session state initialization
 def initialize_session_state():
+    """Initialize session state with agent memory"""
     if 'current_agent' not in st.session_state:
         st.session_state.current_agent = 'condo'
     
@@ -1087,6 +1296,18 @@ def initialize_session_state():
         st.session_state.chat_messages = {}
         for agent_type in AGENT_CONFIGS.keys():
             st.session_state.chat_messages[agent_type] = []
+    
+    # NEW: Agent memory system
+    if 'agent_memory' not in st.session_state:
+        st.session_state.agent_memory = {}
+        for agent_type in AGENT_CONFIGS.keys():
+            st.session_state.agent_memory[agent_type] = {
+                'map_data': None,
+                'last_location': None,
+                'last_search_radius': None,
+                'property_count': 0,
+                'recent_queries': []
+            }
     
     if 'agents' not in st.session_state:
         st.session_state.agents = initialize_agents()
@@ -1099,19 +1320,21 @@ def initialize_session_state():
 
 # Process user query
 async def process_user_query(query: str, agent_type: str) -> str:
+    """Enhanced query processing with agent memory"""
     try:
         # Check for cross-agent query
         parsed = st.session_state.parser.parse_query(query)
         
         if parsed['type'] == 'single_agent':
-            # Single agent query
             agent = st.session_state.agents.get(agent_type)
             if not agent:
                 return f"Error: Agent {agent_type} not found"
             
-            # Build conversation context
+            # Build enhanced context with memory
             conversation_context = ""
             chat_history = st.session_state.chat_messages.get(agent_type, [])
+            
+            # Add chat history context
             if len(chat_history) > 1:
                 recent_messages = chat_history[-4:]
                 context_parts = []
@@ -1125,24 +1348,30 @@ async def process_user_query(query: str, agent_type: str) -> str:
                 if context_parts:
                     conversation_context = "\n".join(context_parts)
             
-            # Enhanced query with context
+            # NEW: Add agent memory context
+            memory_context = get_agent_memory_context()
+            
+            # Enhanced query with both conversation and memory context
             enhanced_query = query
-            if conversation_context:
-                enhanced_query = f"""CONVERSATION CONTEXT:
+            if conversation_context or memory_context != "No previous context available.":
+                enhanced_query = f"""AGENT MEMORY CONTEXT:
+{memory_context}
+
+CONVERSATION CONTEXT:
 {conversation_context}
 
 CURRENT REQUEST: {query}
 
-Use context appropriately for follow-up questions."""
+Use memory and conversation context to provide better responses. If user asks about "the map", "these properties", "current data", etc., refer to the memory context."""
             
-            # Clear any previous visualization
+            # Clear previous visualization
             if 'last_visualization' in st.session_state:
                 del st.session_state.last_visualization
             
-            # Use streaming with proper async handling
+            # Process with enhanced context
             result = Runner.run_streamed(agent, input=enhanced_query)
             
-            # Stream the response with proper token handling
+            # Stream response
             full_response = ""
             response_container = st.empty()
             
@@ -1151,13 +1380,10 @@ Use context appropriately for follow-up questions."""
                     full_response += event.data.delta
                     response_container.markdown(full_response + "▌")
             
-            # Final response without cursor
             response_container.markdown(full_response)
-            
             return full_response
             
         elif parsed['type'] == 'comparison':
-            # Cross-agent comparison
             return await process_cross_agent_comparison(parsed, query)
         
         else:
