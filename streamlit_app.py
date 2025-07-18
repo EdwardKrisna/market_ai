@@ -637,8 +637,8 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                 SELECT 
                     id,
                     alamat,
-                    CAST(latitude AS NUMERIC) as latitude,
-                    CAST(longitude AS NUMERIC) as longitude,
+                    latitude,
+                    longitude,
                     wadmpr,
                     wadmkk,
                     wadmkc,
@@ -646,19 +646,17 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                     hpm,
                     luas_tanah,
                     ST_DistanceSphere(
-                        ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC)),
+                        ST_MakePoint(longitude, latitude),
                         ST_MakePoint({lng}, {lat})
                     ) / 1000 AS distance_km
                 FROM {table_name}
                 WHERE
                     latitude IS NOT NULL 
                     AND longitude IS NOT NULL
-                    AND latitude != '' 
-                    AND longitude != ''
-                    AND latitude NOT LIKE '%null%'
-                    AND longitude NOT LIKE '%null%'
+                    AND latitude != 0 
+                    AND longitude != 0
                     AND ST_DWithin(
-                        ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC))::geography,
+                        ST_MakePoint(longitude, latitude)::geography,
                         ST_MakePoint({lng}, {lat})::geography,
                         {radius_km} * 1000
                     )
@@ -1007,7 +1005,7 @@ LAND EXPERTISE:
 COLUMN DETAILS:
 - id (INTEGER)
 - alamat (TEXT): Property address.
-- latitude/longitude (TEXT): Official/project-recorded latitude and longitude coordinates.
+- latitude/longitude (DOUBLE PRECISION): Official/project-recorded latitude and longitude coordinates.
 - jenis_objek (INTEGER): Property Object Type in number (e.g., 1,2, ect.).
 - luas_tanah (FLOAT): Property area in squared meter.
 - bentuk_tapak (TEXT): Shape of the property site (Letter L, Persegi Panjang, Kipas, Persegi, Trapesium, Tidak Beraturan, Ngantong, Menggantung).
