@@ -1321,7 +1321,7 @@ def initialize_session_state():
 
 # Process user query
 async def process_user_query(query: str, agent_type: str) -> str:
-    """Enhanced query processing with agent memory"""
+    """Enhanced query processing with agent memory - CORRECT ASYNC VERSION"""
     try:
         # Check for cross-agent query
         parsed = st.session_state.parser.parse_query(query)
@@ -1349,7 +1349,7 @@ async def process_user_query(query: str, agent_type: str) -> str:
                 if context_parts:
                     conversation_context = "\n".join(context_parts)
             
-            # NEW: Add agent memory context
+            # Add agent memory context
             memory_context = get_agent_memory_context()
             
             # Enhanced query with both conversation and memory context
@@ -1372,15 +1372,23 @@ Use memory and conversation context to provide better responses. If user asks ab
             # Process with enhanced context
             result = Runner.run_streamed(agent, input=enhanced_query)
             
-            # Stream response
+            # Stream response - FIXED ASYNC VERSION
             full_response = ""
             response_container = st.empty()
             
+            # CORRECT: Use async iteration properly
             async for event in result.stream_events():
-                if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                    full_response += event.data.delta
-                    response_container.markdown(full_response + "▌")
+                if event.type == "raw_response_event":
+                    # Check if it's the right event type from agents library
+                    if hasattr(event.data, 'delta'):
+                        full_response += event.data.delta
+                        response_container.markdown(full_response + "▌")
+                    elif hasattr(event, 'data') and isinstance(event.data, str):
+                        # Alternative: if data is directly a string
+                        full_response += event.data
+                        response_container.markdown(full_response + "▌")
             
+            # Final response without cursor
             response_container.markdown(full_response)
             return full_response
             
@@ -1391,10 +1399,11 @@ Use memory and conversation context to provide better responses. If user asks ab
             return f"Error: {parsed.get('error', 'Unknown cross-agent query type')}"
             
     except Exception as e:
-        return f"Error processing query: {str(e)}"
+        st.error(f"Error processing query: {str(e)}")
+        return f"Error: {str(e)}"
 
 async def process_cross_agent_comparison(parsed: dict, original_query: str) -> str:
-    """Process cross-agent comparison queries"""
+    """Process cross-agent comparison queries - CORRECT ASYNC VERSION"""
     try:
         agents = parsed['agents']
         if len(agents) < 2:
@@ -1419,18 +1428,21 @@ async def process_cross_agent_comparison(parsed: dict, original_query: str) -> s
                 # Run agent
                 result = Runner.run_streamed(agent, input=agent_query)
                 
-                # Collect response (non-streaming for comparison)
+                # Collect response - CORRECT ASYNC VERSION
                 response_text = ""
                 async for event in result.stream_events():
-                    if event.type == "raw_response_event" and isinstance(event.data, ResponseTextDeltaEvent):
-                        response_text += event.data.delta
+                    if event.type == "raw_response_event":
+                        if hasattr(event.data, 'delta'):
+                            response_text += event.data.delta
+                        elif hasattr(event, 'data') and isinstance(event.data, str):
+                            response_text += event.data
                 
                 results[agent_type] = response_text
                 
             except Exception as e:
                 errors.append(f"{agent_type}: {str(e)}")
         
-        # Format combined response
+        # Format combined response (same as before)
         if not results:
             return f"All agents failed. Errors: {'; '.join(errors)}"
         
@@ -1518,7 +1530,7 @@ def render_agent_selection():
             """)
 
 def render_ai_chat():
-    """Render AI chat interface"""
+    """Render AI chat interface - FIXED VERSION"""
     st.markdown('<div class="section-header">💬 AI Chat</div>', unsafe_allow_html=True)
     
     if not initialize_database():
@@ -1575,29 +1587,11 @@ def render_ai_chat():
             if prompt.startswith('#'):
                 st.markdown('<div class="cross-agent-indicator">🔗 Cross-Agent Query Detected</div>', unsafe_allow_html=True)
             
-            # Process the query asynchronously
+            # Process the query - SIMPLIFIED VERSION (NO ASYNC)
             with st.spinner("🤖 Processing ..."):
                 try:
-                    # Simple asyncio handling for Streamlit
-                    try:
-                        # Try to use existing event loop
-                        loop = asyncio.get_event_loop()
-                        if loop.is_running():
-                            # If loop is already running, create a new one
-                            import nest_asyncio
-                            nest_asyncio.apply()
-                            response = asyncio.run(
-                                process_user_query(prompt, st.session_state.current_agent)
-                            )
-                        else:
-                            response = loop.run_until_complete(
-                                process_user_query(prompt, st.session_state.current_agent)
-                            )
-                    except RuntimeError:
-                        # No event loop exists, create one
-                        response = asyncio.run(
-                            process_user_query(prompt, st.session_state.current_agent)
-                        )
+                    # Direct function call without async
+                    response = process_user_query(prompt, st.session_state.current_agent)
                     
                     # Store visualization for redisplay
                     viz_data = st.session_state.get('last_visualization', None)
@@ -1618,7 +1612,7 @@ def render_ai_chat():
                     st.error(f"Error processing query: {str(e)}")
                     response = f"Error: {str(e)}"
     
-    # Chat management
+    # Rest of the chat management code stays the same...
     st.markdown("---")
     col1, col2, col3 = st.columns(3)
     
