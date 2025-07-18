@@ -280,12 +280,12 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
         
         # Prepare customdata for tooltip
         # Handle missing columns and fill with empty string or NaN
-        for col in ['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'distance_km']:
+        for col in ['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'hpm', 'distance_km']:
             if col not in map_df.columns:
                 map_df[col] = ""
         
         # customdata must be a 2D numpy array
-        customdata = map_df[['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'distance_km']].values
+        customdata = map_df[['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'hpm','distance_km']].values
         
         # Add markers with improved tooltip
         fig = go.Figure()
@@ -300,7 +300,8 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
                 "Client: %{customdata[1]}<br>"
                 "Provinsi: %{customdata[2]}<br>"
                 "Kab/Kota: %{customdata[3]}<br>"
-                "%{customdata[4]:.2f} km<extra></extra>"
+                "HPM: %{customdata[4]}<br>"
+                "%{customdata[5]:.2f} km<extra></extra>"
             ),
             name=f'Properties ({len(map_df)})'
         ))
@@ -829,7 +830,7 @@ COLUMN DETAILS:
 - kondisi_wilayah_sekitar (TEXT): Condition of the area around the property (Perumahan Menengah, Industri, Industri/Pergudangan Besar, Campuran, Industri / Perdagangan UKM, Rawan Bencana, Perumahan Sederhana, Perumahan Mewah, Komersial UKM, Kosong Pertanian, Lainnya, Pemerintahan, Dekat Sungai / Parit, Hijau, Dekat TPU, Komersial Primer, Komersial Menengah, Industri / Perdagangan Besar, Komersial, Perumahan).
 - jenis_jalan_utama (TEXT): Type of main road (Jalan, Gang)
 - perkerasan_jalan (TEXT): Property road paving (Sirtu, Lainnya, Aspal Hotmix, Tanah, Aspal Siram, Beton, Aspal, Aspak Hotmix, Paving)
-- hpm (FLOAT) : Property Price per meter.
+- hpm (FLOAT) : Property Price per squared meter.
 - tahun_pengambilan_data (INTEGER) : Year per date of the property price being taken or being survey (not the year of the property build).
 - wadmpr (TEXT): Province (e.g., "DKI Jakarta").
 - wadmkk (TEXT): Regency/City (e.g., "Jakarta Selatan").
