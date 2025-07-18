@@ -551,6 +551,7 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                     f"Client: {row['pemberi_tugas']}",
                     f"Provinsi: {row['wadmpr']}",
                     f"Kab/Kota: {row['wadmkk']}",
+                    f"HPM: {row['hpm']}",
                     f"Jarak: {row['distance_km']:.2f} km"
                 ]
                 
