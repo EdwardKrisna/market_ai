@@ -875,19 +875,17 @@ def initialize_agents():
         # Add common tool instructions
         full_instructions = f"""{agent_instructions}
 
-AVAILABLE TOOLS:
-1. execute_sql_query(sql_query) - Run SQL queries and display results
-2. create_map_visualization(sql_query, title) - Create location maps
-3. create_chart_visualization(chart_type, sql_query, title, x_column, y_column, color_column) - Create charts
-4. find_nearby_projects(location_name, radius_km, title) - Find projects near locations
+**TOOLS:**
+1. execute_sql_query(sql) - Run queries, show data
+2. create_map_visualization(sql, title) - Auto-map for coordinates  
+3. create_chart_visualization(type, sql, title, x, y) - Charts for trends
+4. find_nearby_projects(location, radius) - Geocoded proximity search
 
-TOOL USAGE RULES:
-- If user asks for charts/graphs ("grafik", "chart", "barchart", "pie", etc.), use create_chart_visualization
-- If user asks for properties near a location, use find_nearby_projects
-- If user asks for a map, use create_map_visualization  
-- Otherwise use execute_sql_query for data analysis
-
-Generate appropriate SQL queries and use tools based on the user's request."""
+**RESPONSE:** 
+- General Questions : Detect intent → general answer in user's language.
+- General Questions + Gain info from database : Detect intent → ask user for more spesific instruction or select columns → query → execute → show results + general answer in user's language.
+- General Questions + Gain info from database + With tools : Detect intent → ask user for more spesific instruction or select columns → query → execute → show results + general answer in user's language → detect intent → select tools → execute → show results + general answer in user's language.
+"""
         
         # Create agent
         agent = Agent(
