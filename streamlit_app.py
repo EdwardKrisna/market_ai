@@ -488,42 +488,97 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         st.success(f"📍 Location found: {formatted_address}")
         st.info(f"Coordinates: {lat:.6f}, {lng:.6f}")
         
-        # FIX 1: Use hardcoded table name instead of secrets
-        table_name = "objek_penilaian"  # Direct table name instead of st.secrets["database"]["table_name"]
+        # Use the table from the current active agent
+        current_agent_type = st.session_state.current_agent
+        table_name = AGENT_CONFIGS[current_agent_type]['table']
         
-        # FIX 2: Improved query with better coordinate handling
-        sql_query = f"""
-            SELECT 
-            nama_objek,
-            pemberi_tugas,
-            latitude,
-            longitude,
-            wadmpr,
-            wadmkk,
-            wadmkc,
-            jenis_objek_text,
-            cabang_text,
-            no_kontrak,
-            ST_DistanceSphere(
-                ST_MakePoint(longitude::double precision, latitude::double precision),
-                ST_MakePoint({lng}, {lat})
-            ) / 1000 AS distance_km
-        FROM {table_name}
-        WHERE
-            latitude IS NOT NULL 
-            AND longitude IS NOT NULL
-            AND latitude != 0 
-            AND longitude != 0
-            AND latitude BETWEEN -90 AND 90
-            AND longitude BETWEEN -180 AND 180
-            AND ST_DWithin(
-                ST_MakePoint(longitude::double precision, latitude::double precision)::geography,
-                ST_MakePoint({lng}, {lat})::geography,
-                {radius_km} * 1000
-            )
-        ORDER BY distance_km ASC
-        LIMIT 100
-        """
+        # Build query based on agent type
+        if current_agent_type == 'land':
+            # For land agent - use engineered_property_data table
+            sql_query = f"""
+                SELECT 
+                    id,
+                    alamat,
+                    CAST(latitude AS NUMERIC) as latitude,
+                    CAST(longitude AS NUMERIC) as longitude,
+                    wadmpr,
+                    wadmkk,
+                    wadmkc,
+                    wadmkd,
+                    hpm,
+                    luas_tanah,
+                    ST_DistanceSphere(
+                        ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC)),
+                        ST_MakePoint({lng}, {lat})
+                    ) / 1000 AS distance_km
+                FROM {table_name}
+                WHERE
+                    latitude IS NOT NULL 
+                    AND longitude IS NOT NULL
+                    AND latitude != '' 
+                    AND longitude != ''
+                    AND latitude NOT LIKE '%null%'
+                    AND longitude NOT LIKE '%null%'
+                    AND ST_DWithin(
+                        ST_MakePoint(CAST(longitude AS NUMERIC), CAST(latitude AS NUMERIC))::geography,
+                        ST_MakePoint({lng}, {lat})::geography,
+                        {radius_km} * 1000
+                    )
+                ORDER BY distance_km ASC
+                LIMIT 100
+            """
+            display_columns = ['alamat', 'wadmpr', 'wadmkk', 'wadmkc', 'hpm', 'luas_tanah', 'distance_km']
+            
+        else:
+            # For other agents - use their respective tables
+            if current_agent_type == 'condo':
+                main_column = 'project_name'
+                additional_columns = 'address, developer, grade, unit'
+            elif current_agent_type == 'hotel':
+                main_column = 'project_name'
+                additional_columns = 'address, star, management, unit_developed'
+            elif current_agent_type == 'office':
+                main_column = 'building_name'
+                additional_columns = 'grade, "owner/developer", price_avg'
+            elif current_agent_type == 'hospital':
+                main_column = 'object_name'
+                additional_columns = 'type, grade, beds_capacity'
+            elif current_agent_type == 'retail':
+                main_column = 'project_name'
+                additional_columns = 'address, developer, grade, price_avg'
+            else:
+                main_column = 'id'
+                additional_columns = ''
+            
+            sql_query = f"""
+                SELECT 
+                    id,
+                    {main_column},
+                    latitude,
+                    longitude,
+                    {additional_columns},
+                    wadmpr,
+                    wadmkk,
+                    wadmkc,
+                    ST_DistanceSphere(
+                        ST_MakePoint(longitude, latitude),
+                        ST_MakePoint({lng}, {lat})
+                    ) / 1000 AS distance_km
+                FROM {table_name}
+                WHERE
+                    latitude IS NOT NULL 
+                    AND longitude IS NOT NULL
+                    AND latitude != 0 
+                    AND longitude != 0
+                    AND ST_DWithin(
+                        ST_MakePoint(longitude, latitude)::geography,
+                        ST_MakePoint({lng}, {lat})::geography,
+                        {radius_km} * 1000
+                    )
+                ORDER BY distance_km ASC
+                LIMIT 100
+            """
+            display_columns = [main_column, 'wadmpr', 'wadmkk', 'distance_km']
         
         # Execute query
         result_df, query_msg = st.session_state.db_connection.execute_query(sql_query)
@@ -543,32 +598,39 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                 name='Target Location'
             ))
             
-            # Add project markers
+            # Add project markers with dynamic hover text
             hover_text = []
             for idx, row in result_df.iterrows():
-                text_parts = [
-                    f"Objek: {row['nama_objek']}",
-                    f"Client: {row['pemberi_tugas']}",
-                    f"Provinsi: {row['wadmpr']}",
-                    f"Kab/Kota: {row['wadmkk']}",
-                    f"HPM: {row['hpm']}",
-                    f"Jarak: {row['distance_km']:.2f} km"
-                ]
+                text_parts = [f"ID: {row['id']}"]
                 
-                # Add contract number if available
-                if 'no_kontrak' in row and pd.notna(row['no_kontrak']):
-                    text_parts.insert(1, f"Kontrak: {row['no_kontrak']}")
+                # Add agent-specific information
+                if current_agent_type == 'land':
+                    if 'alamat' in row and pd.notna(row['alamat']):
+                        text_parts.append(f"Alamat: {row['alamat']}")
+                    if 'hpm' in row and pd.notna(row['hpm']):
+                        text_parts.append(f"HPM: Rp {row['hpm']:,.0f}/m²")
+                    if 'luas_tanah' in row and pd.notna(row['luas_tanah']):
+                        text_parts.append(f"Luas: {row['luas_tanah']:,.0f} m²")
+                else:
+                    # For other property types
+                    for col in result_df.columns:
+                        if col not in ['id', 'latitude', 'longitude', 'distance_km'] and pd.notna(row[col]):
+                            text_parts.append(f"{col}: {row[col]}")
                 
+                text_parts.append(f"Jarak: {row['distance_km']:.2f} km")
                 hover_text.append("<br>".join(text_parts))
+            
+            # Use agent-specific color
+            marker_color = AGENT_CONFIGS[current_agent_type]['color']
             
             fig.add_trace(go.Scattermapbox(
                 lat=result_df['latitude'],
                 lon=result_df['longitude'],
                 mode='markers',
-                marker=dict(size=8, color='red'),
+                marker=dict(size=8, color=marker_color),
                 text=hover_text,
                 hovertemplate='%{text}<extra></extra>',
-                name=f'Properties ({len(result_df)})'
+                name=f'{current_agent_type.title()} Properties ({len(result_df)})'
             ))
             
             # Map layout centered on target location
@@ -607,14 +669,19 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
             # Show results table
             with st.expander("📊 Nearby Projects Details", expanded=False):
                 st.code(sql_query, language="sql")
-                st.dataframe(result_df[['nama_objek', 'pemberi_tugas', 'jenis_objek_text', 
-                            'wadmpr', 'wadmkk', 'distance_km']].round(2), 
-                use_container_width=True)
+                if display_columns:
+                    available_cols = [col for col in display_columns if col in result_df.columns]
+                    if available_cols:
+                        st.dataframe(result_df[available_cols].round(2), use_container_width=True)
+                    else:
+                        st.dataframe(result_df.round(2), use_container_width=True)
+                else:
+                    st.dataframe(result_df.round(2), use_container_width=True)
 
-            return f"✅ Found {len(result_df)} projects within {radius_km} km from {location_name}. Closest project is {result_df['distance_km'].min():.2f} km away."
+            return f"✅ Found {len(result_df)} {current_agent_type} properties within {radius_km} km from {location_name}. Closest property is {result_df['distance_km'].min():.2f} km away."
         
         else:
-            return f"❌ No projects found within {radius_km} km from {location_name}. Query message: {query_msg}"
+            return f"❌ No {current_agent_type} properties found within {radius_km} km from {location_name}. Query message: {query_msg}"
         
     except Exception as e:
         return f"Error finding nearby projects: {str(e)}"
