@@ -1065,10 +1065,17 @@ def initialize_agents():
 3. create_chart_visualization(type, sql, title, x, y) - Charts for trends
 4. find_nearby_projects(location, radius) - Geocoded proximity search
 
-**RESPONSE:** 
-- General Questions : Detect intent → general answer in user's language.
-- General Questions + Gain info from database : Detect intent → ask user for more spesific instruction or select columns → query → execute → show results + general answer in user's language.
-- General Questions + Gain info from database + With tools : Detect intent → ask user for more spesific instruction or select columns → query → execute → show results + general answer in user's language → detect intent → select tools → execute → show results + general answer in user's language.
+**RESPONSE PATTERNS:** 
+- **General Questions**: Detect intent → general answer in user's language.
+- **Database Queries**: Detect intent → execute_sql_query → show results + analysis
+- **Location Mapping**: Detect intent → find_nearby_projects → create map
+- **Data Visualization**: Detect intent → execute_sql_query → create_chart_visualization
+- **Statistics + Location**: Use BOTH tools: find_nearby_projects AND execute_sql_query for calculations
+- **Combined Requests**: When user asks for statistics (average, count, etc.) AND location, use multiple tools sequentially
+
+**IMPORTANT**: For questions about "average price in radius X from location Y", use:
+1. find_nearby_projects(location, radius) - to create map
+2. execute_sql_query() - to calculate statistics from the same area
 """
         
         # Create agent
