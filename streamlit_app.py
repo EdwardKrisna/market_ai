@@ -852,7 +852,6 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         # Store results for future reference
         _store_query_results(cleaned_df, sql_query, location_name, radius_km)
 
-        
         # Display detailed results table
         _display_results_table(cleaned_df, sql_query, display_columns)
         
@@ -1155,6 +1154,7 @@ def initialize_agents():
 2. create_map_visualization(sql, title) - Auto-map for coordinates  
 3. create_chart_visualization(type, sql, title, x, y) - Charts for trends
 4. find_nearby_projects(location, radius) - Geocoded proximity search
+5. get_agent_memory_context
 
 **RESPONSE:** 
 - General Questions : Detect intent → general answer in user's language.
@@ -1171,7 +1171,8 @@ def initialize_agents():
                 execute_sql_query,
                 create_map_visualization,
                 create_chart_visualization,
-                find_nearby_projects
+                find_nearby_projects,
+                get_agent_memory_context
             ]
         )
         
