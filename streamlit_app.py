@@ -364,6 +364,99 @@ class AdaptiveVisualizationHelper:
         
         return customdata, hover_template, available_columns
 
+# Geographic query builder for consistent location-based searches
+class GeographicQueryBuilder:
+    """Build consistent geographic queries for different agents"""
+    
+    @staticmethod
+    def build_nearby_query(agent_type: str, lat: float, lng: float, radius_km: float, 
+                          select_columns: str = None, additional_conditions: str = None) -> str:
+        """Build a geographic query for finding properties near a location"""
+        
+        table_name = AGENT_CONFIGS[agent_type]['table']
+        
+        # Default columns based on agent type
+        if select_columns is None:
+            if agent_type == 'land':
+                select_columns = """
+                    id,
+                    alamat,
+                    latitude,
+                    longitude,
+                    wadmpr,
+                    wadmkk,
+                    wadmkc,
+                    wadmkd,
+                    hpm,
+                    luas_tanah
+                """
+            else:
+                # For other agents, use their primary columns
+                config = AGENT_CONFIGS[agent_type]['visualization']
+                primary_cols = config.get('tooltip_columns', ['id', 'latitude', 'longitude'])
+                select_columns = ', '.join(primary_cols)
+        
+        # Build the base query
+        query = f"""
+            SELECT 
+                {select_columns},
+                ST_DistanceSphere(
+                    ST_MakePoint(longitude, latitude),
+                    ST_MakePoint({lng}, {lat})
+                ) / 1000 AS distance_km
+            FROM {table_name}
+            WHERE
+                latitude IS NOT NULL 
+                AND longitude IS NOT NULL
+                AND latitude != 0 
+                AND longitude != 0
+                AND ST_DWithin(
+                    ST_MakePoint(longitude, latitude)::geography,
+                    ST_MakePoint({lng}, {lat})::geography,
+                    {radius_km} * 1000
+                )
+        """
+        
+        # Add additional conditions if provided
+        if additional_conditions:
+            query += f" AND {additional_conditions}"
+        
+        return query.strip()
+    
+    @staticmethod
+    def build_statistics_query(agent_type: str, lat: float, lng: float, radius_km: float, 
+                             statistic: str = 'AVG', column: str = None) -> str:
+        """Build a geographic query for calculating statistics"""
+        
+        # Default column based on agent type
+        if column is None:
+            if agent_type == 'land':
+                column = 'hpm'
+            elif agent_type in ['office', 'retail']:
+                column = 'price_avg'
+            else:
+                column = 'price_avg'  # fallback
+        
+        base_query = GeographicQueryBuilder.build_nearby_query(
+            agent_type, lat, lng, radius_km, 
+            select_columns=f"{column}"
+        )
+        
+        # Wrap with statistics function
+        stats_query = f"""
+            SELECT 
+                {statistic}({column}) as statistic_result,
+                COUNT(*) as total_count,
+                MIN({column}) as min_value,
+                MAX({column}) as max_value
+            FROM (
+                {base_query}
+            ) as nearby_properties
+            WHERE {column} IS NOT NULL AND {column} > 0
+        """
+        
+        return stats_query.strip()
+
 # Function tools for agents
 @function_tool
 def execute_sql_query(sql_query: str) -> str:
@@ -628,41 +721,14 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         
         # Use the table from the current active agent
         current_agent_type = st.session_state.current_agent
-        table_name = AGENT_CONFIGS[current_agent_type]['table']
         
-        # Build query based on agent type
+        # Use unified query builder for consistency
+        sql_query = GeographicQueryBuilder.build_nearby_query(
+            current_agent_type, lat, lng, radius_km
+        ) + "\nORDER BY distance_km ASC\nLIMIT 100"
+        
+        # Set display columns based on agent type
         if current_agent_type == 'land':
-            # For land agent - use engineered_property_data table
-            sql_query = f"""
-                SELECT 
-                    id,
-                    alamat,
-                    latitude,
-                    longitude,
-                    wadmpr,
-                    wadmkk,
-                    wadmkc,
-                    wadmkd,
-                    hpm,
-                    luas_tanah,
-                    ST_DistanceSphere(
-                        ST_MakePoint(longitude, latitude),
-                        ST_MakePoint({lng}, {lat})
-                    ) / 1000 AS distance_km
-                FROM {table_name}
-                WHERE
-                    latitude IS NOT NULL 
-                    AND longitude IS NOT NULL
-                    AND latitude != 0 
-                    AND longitude != 0
-                    AND ST_DWithin(
-                        ST_MakePoint(longitude, latitude)::geography,
-                        ST_MakePoint({lng}, {lat})::geography,
-                        {radius_km} * 1000
-                    )
-                ORDER BY distance_km ASC
-                LIMIT 100
-            """
             display_columns = ['alamat', 'wadmpr', 'wadmkk', 'wadmkc', 'hpm', 'luas_tanah', 'distance_km']
             
         else:
@@ -802,6 +868,73 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         
     except Exception as e:
         return f"Error finding nearby projects: {str(e)}"
+
+@function_tool
+def calculate_nearby_statistics(location_name: str, radius_km: float = 1.0, 
+                               statistic: str = 'AVG', column: str = None) -> str:
+    """Calculate statistics for properties near a specific location using geocoding"""
+    try:
+        if not hasattr(st.session_state, 'geocode_service') or st.session_state.geocode_service is None:
+            return "Error: Geocoding service not available. Please add Google Maps API key."
+        
+        # Geocode the location
+        lat, lng, formatted_address = st.session_state.geocode_service.geocode_address(location_name)
+        
+        if lat is None or lng is None:
+            return f"Error: Could not find coordinates for location '{location_name}'. Try being more specific."
+        
+        # Get current agent type
+        current_agent_type = st.session_state.current_agent
+        
+        # Build statistics query using the same geographic logic
+        stats_query = GeographicQueryBuilder.build_statistics_query(
+            current_agent_type, lat, lng, radius_km, statistic, column
+        )
+        
+        # Execute the statistics query
+        result_df, query_msg = st.session_state.db_connection.execute_query(stats_query)
+        
+        if result_df is not None and len(result_df) > 0:
+            row = result_df.iloc[0]
+            statistic_result = row['statistic_result']
+            total_count = row['total_count']
+            min_value = row['min_value']
+            max_value = row['max_value']
+            
+            # Format the result based on column type
+            if column == 'hpm' or 'price' in str(column).lower():
+                if statistic_result is not None:
+                    formatted_result = f"Rp {statistic_result:,.0f}"
+                    formatted_min = f"Rp {min_value:,.0f}" if min_value else "N/A"
+                    formatted_max = f"Rp {max_value:,.0f}" if max_value else "N/A"
+                else:
+                    formatted_result = "N/A"
+                    formatted_min = "N/A"
+                    formatted_max = "N/A"
+            else:
+                formatted_result = f"{statistic_result:,.2f}" if statistic_result else "N/A"
+                formatted_min = f"{min_value:,.2f}" if min_value else "N/A"
+                formatted_max = f"{max_value:,.2f}" if max_value else "N/A"
+            
+            # Show query details
+            with st.expander("📊 Statistics Query Details", expanded=False):
+                st.code(stats_query, language="sql")
+                st.dataframe(result_df, use_container_width=True)
+            
+            return f"""✅ **Statistics for {current_agent_type} properties within {radius_km} km from {location_name}:**
+
+📍 **Location**: {formatted_address}
+📊 **{statistic.upper()}**: {formatted_result}
+📈 **Range**: {formatted_min} - {formatted_max}
+🔢 **Total Properties**: {total_count}
+
+The calculation uses the same geographic filtering as the map visualization to ensure consistency."""
+        
+        else:
+            return f"❌ No {current_agent_type} properties found within {radius_km} km from {location_name} for statistics calculation. Query message: {query_msg}"
+    
+    except Exception as e:
+        return f"Error calculating nearby statistics: {str(e)}"
 
 
 def get_agent_instructions(agent_type: str, table_name: str) -> str:
@@ -1064,18 +1197,21 @@ def initialize_agents():
 2. create_map_visualization(sql, title) - Auto-map for coordinates  
 3. create_chart_visualization(type, sql, title, x, y) - Charts for trends
 4. find_nearby_projects(location, radius) - Geocoded proximity search
+5. calculate_nearby_statistics(location, radius, statistic, column) - Calculate statistics for nearby properties
 
 **RESPONSE PATTERNS:** 
 - **General Questions**: Detect intent → general answer in user's language.
 - **Database Queries**: Detect intent → execute_sql_query → show results + analysis
 - **Location Mapping**: Detect intent → find_nearby_projects → create map
 - **Data Visualization**: Detect intent → execute_sql_query → create_chart_visualization
-- **Statistics + Location**: Use BOTH tools: find_nearby_projects AND execute_sql_query for calculations
-- **Combined Requests**: When user asks for statistics (average, count, etc.) AND location, use multiple tools sequentially
+- **Statistics + Location**: Use calculate_nearby_statistics for consistent geographic calculations
+- **Combined Requests**: When user asks for statistics (average, count, etc.) AND location, use BOTH:
+  1. find_nearby_projects(location, radius) - to create map
+  2. calculate_nearby_statistics(location, radius, 'AVG', 'hpm') - for statistics
 
 **IMPORTANT**: For questions about "average price in radius X from location Y", use:
 1. find_nearby_projects(location, radius) - to create map
-2. execute_sql_query() - to calculate statistics from the same area
+2. calculate_nearby_statistics(location, radius, 'AVG') - for consistent statistics calculation
 """
         
         # Create agent
@@ -1087,7 +1223,8 @@ def initialize_agents():
                 execute_sql_query,
                 create_map_visualization,
                 create_chart_visualization,
-                find_nearby_projects
+                find_nearby_projects,
+                calculate_nearby_statistics
             ]
         )
         
