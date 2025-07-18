@@ -78,49 +78,91 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Agent configurations
+# Agent configurations with visualization settings
 AGENT_CONFIGS = {
     'condo': {
         'name': 'Condo Expert',
         'icon': '🏠',
         'table': 'condo_converted_2025',
         'color': '#3498db',
-        'description': 'Residential condominium specialist'
+        'description': 'Residential condominium specialist',
+        'visualization': {
+            'primary_name': 'project_name',
+            'tooltip_columns': ['project_name', 'developer', 'wadmpr', 'wadmkk', 'grade', 'unit'],
+            'column_labels': ['Project', 'Developer', 'Provinsi', 'Kab/Kota', 'Grade', 'Units'],
+            'format_rules': {'unit': 'number'},
+            'fallback_columns': ['id', 'address']
+        }
     },
     'hotel': {
         'name': 'Hotel Expert', 
         'icon': '🏨',
         'table': 'hotel_converted_2025',
         'color': '#e74c3c',
-        'description': 'Hospitality property specialist'
+        'description': 'Hospitality property specialist',
+        'visualization': {
+            'primary_name': 'project_name',
+            'tooltip_columns': ['project_name', 'management', 'wadmpr', 'wadmkk', 'star', 'unit_developed'],
+            'column_labels': ['Project', 'Management', 'Provinsi', 'Kab/Kota', 'Star', 'Units'],
+            'format_rules': {'unit_developed': 'number'},
+            'fallback_columns': ['id', 'address']
+        }
     },
     'hospital': {
         'name': 'Hospital Expert',
         'icon': '🏥',
         'table': 'hospital_converted_2025',
         'color': '#9b59b6',
-        'description': 'Healthcare facility specialist'
+        'description': 'Healthcare facility specialist',
+        'visualization': {
+            'primary_name': 'object_name',
+            'tooltip_columns': ['object_name', 'type', 'wadmpr', 'wadmkk', 'grade', 'beds_capacity'],
+            'column_labels': ['Hospital', 'Type', 'Provinsi', 'Kab/Kota', 'Grade', 'Beds'],
+            'format_rules': {'beds_capacity': 'number'},
+            'fallback_columns': ['id']
+        }
     },
     'office': {
         'name': 'Office Expert',
         'icon': '🏢',
         'table': 'office_converted_2025',
         'color': '#f39c12',
-        'description': 'Commercial office specialist'
+        'description': 'Commercial office specialist',
+        'visualization': {
+            'primary_name': 'building_name',
+            'tooltip_columns': ['building_name', 'owner/developer', 'wadmpr', 'wadmkk', 'grade', 'price_avg'],
+            'column_labels': ['Building', 'Owner/Developer', 'Provinsi', 'Kab/Kota', 'Grade', 'Price Avg'],
+            'format_rules': {'price_avg': 'currency'},
+            'fallback_columns': ['id']
+        }
     },
     'retail': {
         'name': 'Retail Expert',
         'icon': '🏬',
         'table': 'retail_converted_2025',
         'color': '#27ae60',
-        'description': 'Retail property specialist'
+        'description': 'Retail property specialist',
+        'visualization': {
+            'primary_name': 'project_name',
+            'tooltip_columns': ['project_name', 'developer', 'wadmpr', 'wadmkk', 'grade', 'price_avg'],
+            'column_labels': ['Project', 'Developer', 'Provinsi', 'Kab/Kota', 'Grade', 'Price Avg'],
+            'format_rules': {'price_avg': 'currency'},
+            'fallback_columns': ['id', 'address']
+        }
     },
     'land': {
         'name': 'Land Market Expert',
         'icon': '🌍',
         'table': 'engineered_property_data',
         'color': '#8b4513',
-        'description': 'Land market and property value specialist'
+        'description': 'Land market and property value specialist',
+        'visualization': {
+            'primary_name': 'alamat',
+            'tooltip_columns': ['alamat', 'wadmpr', 'wadmkk', 'wadmkc', 'hpm', 'luas_tanah'],
+            'column_labels': ['Alamat', 'Provinsi', 'Kab/Kota', 'Kecamatan', 'HPM', 'Luas Tanah'],
+            'format_rules': {'hpm': 'currency_per_m2', 'luas_tanah': 'area'},
+            'fallback_columns': ['id']
+        }
     }
 }
 
@@ -213,6 +255,115 @@ class GeocodeService:
             st.error(f"Geocoding error: {str(e)}")
             return None, None, None
 
+# Adaptive visualization helper functions
+class AdaptiveVisualizationHelper:
+    """Handle adaptive visualization for different agent types and table structures"""
+    
+    @staticmethod
+    def get_agent_config(agent_type: str = None) -> dict:
+        """Get current agent's visualization configuration"""
+        if agent_type is None:
+            agent_type = st.session_state.get('current_agent', 'condo')
+        
+        return AGENT_CONFIGS.get(agent_type, {}).get('visualization', {})
+    
+    @staticmethod
+    def detect_available_columns(df, config: dict) -> tuple:
+        """Detect available columns and create fallback mapping"""
+        tooltip_columns = config.get('tooltip_columns', [])
+        column_labels = config.get('column_labels', [])
+        fallback_columns = config.get('fallback_columns', ['id'])
+        
+        # Find available columns
+        available_columns = []
+        available_labels = []
+        
+        for i, col in enumerate(tooltip_columns):
+            if col in df.columns:
+                available_columns.append(col)
+                available_labels.append(column_labels[i] if i < len(column_labels) else col)
+            else:
+                # Try to find fallback
+                for fallback in fallback_columns:
+                    if fallback in df.columns:
+                        available_columns.append(fallback)
+                        available_labels.append(fallback.replace('_', ' ').title())
+                        break
+        
+        # Always add distance_km if available
+        if 'distance_km' in df.columns and 'distance_km' not in available_columns:
+            available_columns.append('distance_km')
+            available_labels.append('Distance')
+        
+        return available_columns, available_labels
+    
+    @staticmethod
+    def format_value(value, format_type: str) -> str:
+        """Format value based on format type"""
+        if pd.isna(value) or value == '' or value is None:
+            return '-'
+        
+        try:
+            if format_type == 'currency':
+                return f"Rp {float(value):,.0f}"
+            elif format_type == 'currency_per_m2':
+                return f"Rp {float(value):,.0f}/m²"
+            elif format_type == 'area':
+                return f"{float(value):,.0f} m²"
+            elif format_type == 'number':
+                return f"{float(value):,.0f}"
+            elif format_type == 'distance':
+                return f"{float(value):.2f} km"
+            else:
+                return str(value)
+        except (ValueError, TypeError):
+            return str(value)
+    
+    @staticmethod
+    def create_adaptive_tooltip(df, agent_type: str = None) -> tuple:
+        """Create adaptive tooltip data and template"""
+        config = AdaptiveVisualizationHelper.get_agent_config(agent_type)
+        available_columns, available_labels = AdaptiveVisualizationHelper.detect_available_columns(df, config)
+        format_rules = config.get('format_rules', {})
+        
+        if not available_columns:
+            # Fallback to basic columns
+            available_columns = ['id']
+            available_labels = ['ID']
+        
+        # Ensure all columns exist in dataframe
+        for col in available_columns:
+            if col not in df.columns:
+                if col == 'distance_km':
+                    df[col] = 0.0
+                else:
+                    df[col] = ''
+        
+        # Build hover template
+        hover_parts = []
+        for i, (col, label) in enumerate(zip(available_columns, available_labels)):
+            format_type = format_rules.get(col, 'default')
+            
+            if format_type == 'currency':
+                hover_parts.append(f"{label}: Rp %{{customdata[{i}]:,.0f}}")
+            elif format_type == 'currency_per_m2':
+                hover_parts.append(f"{label}: Rp %{{customdata[{i}]:,.0f}}/m²")
+            elif format_type == 'area':
+                hover_parts.append(f"{label}: %{{customdata[{i}]:,.0f}} m²")
+            elif format_type == 'number':
+                hover_parts.append(f"{label}: %{{customdata[{i}]:,.0f}}")
+            elif col == 'distance_km':
+                hover_parts.append(f"{label}: %{{customdata[{i}]:.2f}} km")
+            else:
+                hover_parts.append(f"{label}: %{{customdata[{i}]}}")
+        
+        hover_template = "<br>".join(hover_parts) + "<extra></extra>"
+        
+        # Create customdata array
+        customdata = df[available_columns].fillna('').values
+        
+        return customdata, hover_template, available_columns
+
 # Function tools for agents
 @function_tool
 def execute_sql_query(sql_query: str) -> str:
@@ -278,16 +429,10 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
         if len(map_df) == 0:
             return "Error: No valid coordinates found in the data"
         
-        # Prepare customdata for tooltip
-        # Handle missing columns and fill with empty string or NaN
-        for col in ['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'hpm', 'distance_km']:
-            if col not in map_df.columns:
-                map_df[col] = ""
+        # Use adaptive tooltip system
+        customdata, hover_template, tooltip_columns = AdaptiveVisualizationHelper.create_adaptive_tooltip(map_df)
         
-        # customdata must be a 2D numpy array
-        customdata = map_df[['nama_objek', 'pemberi_tugas', 'wadmpr', 'wadmkk', 'hpm','distance_km']].values
-        
-        # Add markers with improved tooltip
+        # Add markers with adaptive tooltip
         fig = go.Figure()
         fig.add_trace(go.Scattermapbox(
             lat=map_df['latitude'],
@@ -295,14 +440,7 @@ def create_map_visualization(sql_query: str, title: str = "Property Locations") 
             mode='markers',
             marker=dict(size=8, color='red'),
             customdata=customdata,
-            hovertemplate=(
-                "Objek: %{customdata[0]}<br>"
-                "Client: %{customdata[1]}<br>"
-                "Provinsi: %{customdata[2]}<br>"
-                "Kab/Kota: %{customdata[3]}<br>"
-                "HPM: %{customdata[4]}<br>"
-                "%{customdata[5]:.2f} km<extra></extra>"
-            ),
+            hovertemplate=hover_template,
             name=f'Properties ({len(map_df)})'
         ))
         
@@ -598,27 +736,8 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                 name='Target Location'
             ))
             
-            # Add project markers with dynamic hover text
-            hover_text = []
-            for idx, row in result_df.iterrows():
-                text_parts = [f"ID: {row['id']}"]
-                
-                # Add agent-specific information
-                if current_agent_type == 'land':
-                    if 'alamat' in row and pd.notna(row['alamat']):
-                        text_parts.append(f"Alamat: {row['alamat']}")
-                    if 'hpm' in row and pd.notna(row['hpm']):
-                        text_parts.append(f"HPM: Rp {row['hpm']:,.0f}/m²")
-                    if 'luas_tanah' in row and pd.notna(row['luas_tanah']):
-                        text_parts.append(f"Luas: {row['luas_tanah']:,.0f} m²")
-                else:
-                    # For other property types
-                    for col in result_df.columns:
-                        if col not in ['id', 'latitude', 'longitude', 'distance_km'] and pd.notna(row[col]):
-                            text_parts.append(f"{col}: {row[col]}")
-                
-                text_parts.append(f"Jarak: {row['distance_km']:.2f} km")
-                hover_text.append("<br>".join(text_parts))
+            # Use adaptive tooltip system for project markers
+            customdata, hover_template, tooltip_columns = AdaptiveVisualizationHelper.create_adaptive_tooltip(result_df, current_agent_type)
             
             # Use agent-specific color
             marker_color = AGENT_CONFIGS[current_agent_type]['color']
@@ -628,8 +747,8 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
                 lon=result_df['longitude'],
                 mode='markers',
                 marker=dict(size=8, color=marker_color),
-                text=hover_text,
-                hovertemplate='%{text}<extra></extra>',
+                customdata=customdata,
+                hovertemplate=hover_template,
                 name=f'{current_agent_type.title()} Properties ({len(result_df)})'
             ))
             
