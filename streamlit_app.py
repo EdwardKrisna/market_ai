@@ -730,57 +730,18 @@ def find_nearby_projects(location_name: str, radius_km: float = 1.0,
         # Set display columns based on agent type
         if current_agent_type == 'land':
             display_columns = ['alamat', 'wadmpr', 'wadmkk', 'wadmkc', 'hpm', 'luas_tanah', 'distance_km']
-            
+        elif current_agent_type == 'condo':
+            display_columns = ['project_name', 'developer', 'wadmpr', 'wadmkk', 'grade', 'distance_km']
+        elif current_agent_type == 'hotel':
+            display_columns = ['project_name', 'management', 'wadmpr', 'wadmkk', 'star', 'distance_km']
+        elif current_agent_type == 'office':
+            display_columns = ['building_name', 'owner/developer', 'wadmpr', 'wadmkk', 'grade', 'distance_km']
+        elif current_agent_type == 'hospital':
+            display_columns = ['object_name', 'type', 'wadmpr', 'wadmkk', 'grade', 'distance_km']
+        elif current_agent_type == 'retail':
+            display_columns = ['project_name', 'developer', 'wadmpr', 'wadmkk', 'grade', 'distance_km']
         else:
-            # For other agents - use their respective tables
-            if current_agent_type == 'condo':
-                main_column = 'project_name'
-                additional_columns = 'address, developer, grade, unit'
-            elif current_agent_type == 'hotel':
-                main_column = 'project_name'
-                additional_columns = 'address, star, management, unit_developed'
-            elif current_agent_type == 'office':
-                main_column = 'building_name'
-                additional_columns = 'grade, "owner/developer", price_avg'
-            elif current_agent_type == 'hospital':
-                main_column = 'object_name'
-                additional_columns = 'type, grade, beds_capacity'
-            elif current_agent_type == 'retail':
-                main_column = 'project_name'
-                additional_columns = 'address, developer, grade, price_avg'
-            else:
-                main_column = 'id'
-                additional_columns = ''
-            
-            sql_query = f"""
-                SELECT 
-                    id,
-                    {main_column},
-                    latitude,
-                    longitude,
-                    {additional_columns},
-                    wadmpr,
-                    wadmkk,
-                    wadmkc,
-                    ST_DistanceSphere(
-                        ST_MakePoint(longitude, latitude),
-                        ST_MakePoint({lng}, {lat})
-                    ) / 1000 AS distance_km
-                FROM {table_name}
-                WHERE
-                    latitude IS NOT NULL 
-                    AND longitude IS NOT NULL
-                    AND latitude != 0 
-                    AND longitude != 0
-                    AND ST_DWithin(
-                        ST_MakePoint(longitude, latitude)::geography,
-                        ST_MakePoint({lng}, {lat})::geography,
-                        {radius_km} * 1000
-                    )
-                ORDER BY distance_km ASC
-                LIMIT 100
-            """
-            display_columns = [main_column, 'wadmpr', 'wadmkk', 'distance_km']
+            display_columns = ['id', 'wadmpr', 'wadmkk', 'distance_km']
         
         # Execute query
         result_df, query_msg = st.session_state.db_connection.execute_query(sql_query)
