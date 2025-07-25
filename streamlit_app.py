@@ -1087,7 +1087,7 @@ RESPONSE STYLE:
 
 CRITICAL: You can ONLY answer questions in this retail property domain scope!""",
 
-        'land': f"""You are a Land Market Expert for a public appraisal services office in Indonesia specializing in land property analysis using.
+        'land': f"""You are a Land Market Expert for a public appraisal services office in Indonesia specializing in land property analysis.
 Table: {table_name}
 
 LAND EXPERTISE:
@@ -1571,13 +1571,13 @@ def render_ai_chat():
     # Agent status display with session info
     current_config = AGENT_CONFIGS[st.session_state.current_agent]
     session_info = get_session_info()
-    session_text = f" • Session: {session_info['session_id']}" if session_info['active'] else ""
+    # session_text = f" • Session: {session_info['session_id']}" if session_info['active'] else ""
     
-    st.markdown(f"""
-    <div class="agent-status">
-        {current_config['icon']} {current_config['name']}{session_text}
-    </div>
-    """, unsafe_allow_html=True)
+    # st.markdown(f"""
+    # <div class="agent-status">
+    #     {current_config['icon']} {current_config['name']}{session_text}
+    # </div>
+    # """, unsafe_allow_html=True)
     
     # Get current agent's chat history
     current_history = st.session_state.chat_messages.get(st.session_state.current_agent, [])
