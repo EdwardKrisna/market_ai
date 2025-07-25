@@ -11,7 +11,7 @@ from datetime import datetime
 import warnings
 import requests
 import math
-from agents import Agent, function_tool, Runner
+from agents import Agent, function_tool, Runner, SQLiteSession
 from openai.types.responses import ResponseTextDeltaEvent
 
 warnings.filterwarnings('ignore')
@@ -1300,6 +1300,43 @@ def initialize_geocode_service():
         st.session_state.geocode_service = None
         return None
 
+# Session management functions
+def initialize_session():
+    """Initialize SQLite session for conversation persistence"""
+    if 'conversation_session' not in st.session_state:
+        # Create unique session ID based on user and timestamp
+        import hashlib
+        session_id = hashlib.md5(f"market_ai_user_{datetime.now().date()}".encode()).hexdigest()[:12]
+        
+        # Create session with database file in the same directory
+        st.session_state.conversation_session = SQLiteSession(
+            session_id=session_id,
+            db_path="market_ai_conversations.db"
+        )
+        st.session_state.session_id = session_id
+    
+    return st.session_state.conversation_session
+
+def get_session_info():
+    """Get current session information"""
+    if 'conversation_session' in st.session_state:
+        return {
+            "session_id": st.session_state.session_id,
+            "active": True
+        }
+    return {"session_id": None, "active": False}
+
+def clear_session():
+    """Clear current conversation session"""
+    if 'conversation_session' in st.session_state:
+        # SQLiteSession doesn't have a clear method, so we create a new session
+        del st.session_state.conversation_session
+        del st.session_state.session_id
+        # Re-initialize with new session
+        initialize_session()
+        return True
+    return False
+
 # Session state initialization
 def initialize_session_state():
     if 'current_agent' not in st.session_state:
@@ -1318,6 +1355,9 @@ def initialize_session_state():
     
     if 'parser' not in st.session_state:
         st.session_state.parser = CrossAgentQueryParser()
+    
+    # Initialize conversation session
+    initialize_session()
 
 # Process user query
 async def process_user_query(query: str, agent_type: str) -> str:
@@ -1361,8 +1401,11 @@ Use context appropriately for follow-up questions."""
             if 'last_visualization' in st.session_state:
                 del st.session_state.last_visualization
             
-            # Use streaming with proper async handling
-            result = Runner.run_streamed(agent, input=enhanced_query)
+            # Get session for conversation persistence
+            session = st.session_state.conversation_session
+            
+            # Use streaming with proper async handling and session context
+            result = Runner.run_streamed(agent, input=enhanced_query, session=session)
             
             # Stream the response with proper token handling
             full_response = ""
@@ -1411,8 +1454,11 @@ async def process_cross_agent_comparison(parsed: dict, original_query: str) -> s
                 # Generate agent-specific query
                 agent_query = f"Analyze {agent_type} properties for: {clean_query}"
                 
-                # Run agent
-                result = Runner.run_streamed(agent, input=agent_query)
+                # Get session for conversation persistence
+                session = st.session_state.conversation_session
+                
+                # Run agent with session
+                result = Runner.run_streamed(agent, input=agent_query, session=session)
                 
                 # Collect response (non-streaming for comparison)
                 response_text = ""
@@ -1522,11 +1568,14 @@ def render_ai_chat():
     # Initialize services
     geocode_service = initialize_geocode_service()
     
-    # Agent status display
+    # Agent status display with session info
     current_config = AGENT_CONFIGS[st.session_state.current_agent]
+    session_info = get_session_info()
+    session_text = f" • Session: {session_info['session_id']}" if session_info['active'] else ""
+    
     st.markdown(f"""
     <div class="agent-status">
-        {current_config['icon']} {current_config['name']}
+        {current_config['icon']} {current_config['name']}{session_text}
     </div>
     """, unsafe_allow_html=True)
     
@@ -1696,6 +1745,14 @@ def main():
     else:
         st.sidebar.error("❌ Agents Not Ready")
     
+    # Session status
+    session_info = get_session_info()
+    if session_info["active"]:
+        st.sidebar.success("💾 Session: Active")
+        st.sidebar.caption(f"ID: {session_info['session_id']}")
+    else:
+        st.sidebar.warning("💾 Session: Inactive")
+    
     # Current agent
     if st.session_state.current_agent:
         config = AGENT_CONFIGS[st.session_state.current_agent]
@@ -1712,6 +1769,27 @@ def main():
         count = len(st.session_state.chat_messages.get(agent_type, []))
         status = "💬" if count > 0 else "💤"
         st.sidebar.text(f"{status} {config['icon']} {config['name']}: {count}")
+    
+    # Session management
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("**💾 Session Management**")
+    
+    col1, col2 = st.sidebar.columns(2)
+    with col1:
+        if st.button("🔄 New Session", help="Start a new conversation session"):
+            if clear_session():
+                st.success("New session started!")
+                st.rerun()
+    
+    with col2:
+        if st.button("📊 Session Info", help="Show session information"):
+            session_info = get_session_info()
+            if session_info["active"]:
+                st.sidebar.text(f"ID: {session_info['session_id']}")
+                st.sidebar.text("Status: Active")
+                st.sidebar.text("DB: market_ai_conversations.db")
+            else:
+                st.sidebar.text("No active session")
 
 if __name__ == "__main__":
     main()
